@@ -17,35 +17,38 @@
     </audio>
     
     <script>
-        // Check if first visit
-        if (!localStorage.getItem('niamchat_username')) {
-            localStorage.setItem('niamchat_first_visit', 'true');
+        <script>
+    // Check if first visit
+    if (!localStorage.getItem('niamchat_username')) {
+        localStorage.setItem('niamchat_first_visit', 'true');
+    }
+    
+    // Load message sound - will be loaded dynamically by React
+    // The sound file is in root folder, backend will serve it
+    console.log('NiamChat loading...');
+    
+    // Create fallback sound in case msg.mp3 doesn't load
+    window.createFallbackSound = function() {
+        try {
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            oscillator.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            oscillator.frequency.value = 800;
+            gainNode.gain.value = 0.1;
+            
+            return function play() {
+                oscillator.start();
+                setTimeout(() => oscillator.stop(), 100);
+            };
+        } catch (e) {
+            return function play() {
+                console.log('Sound played (no audio available)');
+            };
         }
-        
-        // Load message sound
-        const messageSound = document.getElementById('messageSound');
-        fetch('/sounds/msg.mp3')
-            .then(response => response.blob())
-            .then(blob => {
-                const url = URL.createObjectURL(blob);
-                messageSound.src = url;
-            })
-            .catch(() => {
-                console.log('No custom sound found, using default');
-                // Create a simple beep sound as fallback
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioContext.createOscillator();
-                const gainNode = audioContext.createGain();
-                oscillator.connect(gainNode);
-                gainNode.connect(audioContext.destination);
-                oscillator.frequency.value = 800;
-                gainNode.gain.value = 0.1;
-                
-                messageSound.play = function() {
-                    oscillator.start();
-                    setTimeout(() => oscillator.stop(), 100);
-                };
-            });
+    };
+
     </script>
 </body>
 </html>
