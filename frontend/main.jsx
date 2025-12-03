@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { io } from 'socket.io-client';
 
 // Initialize socket connection
-const socket = io('http://localhost:3001');
+const socket = io('https://niamchat-backend.onrender.com');
 
 // ==================== MAIN APP COMPONENT ====================
 function App() {
