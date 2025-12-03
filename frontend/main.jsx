@@ -115,6 +115,7 @@ function App() {
           onBack={() => setPage('main-hub')}
           onJoinRoom={joinRoom}
           theme={theme}
+          socket={socket} 
         />
       );
     case 'chat':
@@ -278,55 +279,53 @@ function getThemeColor(theme) {
 }
 
 // ==================== PRIVATE ROOMS ====================
-function PrivateRooms({ onBack, onJoinRoom, theme }) {
+function PrivateRooms({ onBack, onJoinRoom, theme, socket }) {
   const [roomName, setRoomName] = useState('');
   const [roomCode, setRoomCode] = useState('');
-  const [createdRooms, setCreatedRooms] = useState([]);
+  const [myRooms, setMyRooms] = useState([]);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    if (socket) {
+      socket.emit('get_my_rooms');
+      socket.on('my_rooms_list', (rooms) => {
+        setMyRooms(rooms);
+      });
+      socket.on('private_room_created', (data) => {
+        setSuccess(`Room created! Code: ${data.roomCode}`);
+        setRoomName('');
+        socket.emit('get_my_rooms'); // Refresh list
+      });
+      socket.on('room_error', (data) => {
+        setError(data.message);
+      });
+    }
+
+    return () => {
+      if (socket) {
+        socket.off('my_rooms_list');
+        socket.off('private_room_created');
+        socket.off('room_error');
+      }
+    };
+  }, [socket]);
 
   const createRoom = () => {
     if (roomName.trim()) {
-      const roomId = `private_${Date.now()}`;
-      onJoinRoom(roomId, roomName.trim(), true);
-      
-      // Save to local storage
-      const newRoom = {
-        id: roomId,
-        name: roomName.trim(),
-        code: generateRoomCode(),
-        createdAt: new Date().toISOString()
-      };
-      
-      const rooms = JSON.parse(localStorage.getItem('niamchat_rooms') || '[]');
-      rooms.push(newRoom);
-      localStorage.setItem('niamchat_rooms', JSON.stringify(rooms));
-      setCreatedRooms(rooms);
-      setRoomName('');
+      setError('');
+      socket.emit('create_private_room', { roomName: roomName.trim() });
     }
   };
 
   const joinWithCode = () => {
     if (roomCode.trim().length === 6) {
-      // In a real app, we'd validate the code with the server
-      const roomId = `private_${roomCode.toUpperCase()}`;
-      onJoinRoom(roomId, `Private Room ${roomCode}`, true);
+      setError('');
+      socket.emit('join_private_room', { roomCode: roomCode.trim().toUpperCase() });
+    } else {
+      setError('Room code must be 6 characters');
     }
   };
-
-  // Generate a 6-character room code
-  const generateRoomCode = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let code = '';
-    for (let i = 0; i < 6; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return code;
-  };
-
-  // Load created rooms from localStorage
-  useEffect(() => {
-    const rooms = JSON.parse(localStorage.getItem('niamchat_rooms') || '[]');
-    setCreatedRooms(rooms);
-  }, []);
 
   return (
     <div className="main-hub fade-in-up">
@@ -345,7 +344,7 @@ function PrivateRooms({ onBack, onJoinRoom, theme }) {
             placeholder="Room name"
             value={roomName}
             onChange={(e) => setRoomName(e.target.value)}
-            style={{ width: '100%', padding: '15px', marginBottom: '15px', borderRadius: '10px' }}
+            style={{ width: '100%', padding: '15px', marginBottom: '15px', borderRadius: '10px', background: 'rgba(15, 23, 42, 0.7)', color: '#f8fafc', border: '1px solid #334155' }}
             maxLength={30}
           />
           <button
@@ -354,6 +353,7 @@ function PrivateRooms({ onBack, onJoinRoom, theme }) {
           >
             Create Room
           </button>
+          {success && <div style={{ color: '#10b981', marginTop: '10px' }}>{success}</div>}
         </div>
 
         {/* Join Room */}
@@ -364,7 +364,7 @@ function PrivateRooms({ onBack, onJoinRoom, theme }) {
             placeholder="Enter 6-digit code"
             value={roomCode}
             onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-            style={{ width: '100%', padding: '15px', marginBottom: '15px', borderRadius: '10px', textTransform: 'uppercase', letterSpacing: '2px' }}
+            style={{ width: '100%', padding: '15px', marginBottom: '15px', borderRadius: '10px', background: 'rgba(15, 23, 42, 0.7)', color: '#f8fafc', border: '1px solid #334155', textTransform: 'uppercase', letterSpacing: '2px' }}
             maxLength={6}
           />
           <button
@@ -373,22 +373,25 @@ function PrivateRooms({ onBack, onJoinRoom, theme }) {
           >
             Join Room
           </button>
+          {error && <div style={{ color: '#ef4444', marginTop: '10px' }}>{error}</div>}
         </div>
       </div>
 
       {/* Previous Rooms */}
-      {createdRooms.length > 0 && (
+      {myRooms.length > 0 && (
         <div>
           <h3 style={{ marginBottom: '20px', color: '#f8fafc' }}>Your Rooms</h3>
           <div style={{ display: 'grid', gap: '15px' }}>
-            {createdRooms.map((room) => (
+            {myRooms.map((room) => (
               <div key={room.id} style={{ background: 'rgba(30, 41, 59, 0.7)', padding: '20px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <div style={{ fontWeight: 'bold', color: '#f8fafc' }}>{room.name}</div>
                   <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Code: {room.code}</div>
                 </div>
                 <button
-                  onClick={() => onJoinRoom(room.id, room.name, true)}
+                  onClick={() => {
+                    socket.emit('join_private_room', { roomCode: room.code });
+                  }}
                   style={{ padding: '10px 20px', background: 'rgba(59, 130, 246, 0.2)', border: '1px solid rgba(96, 165, 250, 0.3)', color: '#60a5fa', borderRadius: '8px', cursor: 'pointer' }}
                 >
                   Join
