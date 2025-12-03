@@ -14,6 +14,8 @@ const io = socketIo(server, {
 });
 
 app.use(cors());
+// Serve static files from root folder (for msg.mp3)
+app.use(express.static('../'));
 app.use(express.json());
 
 // Store data in memory (we'll add database later)
