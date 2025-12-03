@@ -26,6 +26,9 @@ const rooms = new Map(); // roomId -> room data
 // Hardcoded admin username - CHANGE THIS TO YOUR SECRET USERNAME
 const ADMIN_USERNAME = "CharlieMartin12344";
 
+// Store private rooms
+const privateRooms = new Map(); // roomCode -> roomData
+
 // Generate 6-character room code
 function generateRoomCode() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -168,7 +171,72 @@ io.on('connection', (socket) => {
   socket.on('dislike_message', ({ messageId }) => {
     handleReaction(socket.id, messageId, 'dislike');
   });
+  // Create private room
+  socket.on('create_private_room', ({ roomName }) => {
+    const user = users.get(socket.id);
+    if (!user) return;
 
+    const roomCode = generateRoomCode();
+    const roomId = `private_${roomCode}`;
+    
+    const room = {
+      id: roomId,
+      name: roomName,
+      code: roomCode,
+      createdBy: user.username,
+      createdAt: Date.now(),
+      isPrivate: true,
+      users: [],
+      messages: []
+    };
+
+    privateRooms.set(roomCode, room);
+    rooms.set(roomId, room);
+
+    socket.emit('private_room_created', {
+      roomId: roomId,
+      roomCode: roomCode,
+      roomName: roomName
+    });
+
+    console.log(`Private room created: ${roomName} (${roomCode})`);
+  });
+
+  // Join private room with code
+  socket.on('join_private_room', ({ roomCode }) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const roomData = privateRooms.get(roomCode.toUpperCase());
+    if (!roomData) {
+      socket.emit('room_error', { message: 'Room not found' });
+      return;
+    }
+
+    // Join the room using existing join_room event
+    socket.emit('join_room', {
+      roomId: roomData.id,
+      roomName: roomData.name,
+      isPrivate: true
+    });
+  });
+
+  // Get user's private rooms
+  socket.on('get_my_rooms', () => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const myRooms = Array.from(privateRooms.values())
+      .filter(room => room.createdBy === user.username)
+      .map(room => ({
+        id: room.id,
+        name: room.name,
+        code: room.code,
+        createdAt: room.createdAt
+      }));
+
+    socket.emit('my_rooms_list', myRooms);
+  });
   // Handle reaction helper
   function handleReaction(userId, messageId, type) {
     const user = users.get(userId);
