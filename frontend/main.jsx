@@ -509,15 +509,29 @@ function ChatRoom({ socket, userData, currentRoom, onBack, theme, soundEnabled, 
   }, [messages]);
 
   // Send message
+  // Send message
   const sendMessage = (e) => {
-    e.preventDefault();
-    if (newMessage.trim()) {
-      socket.emit('send_message', {
-        content: newMessage.trim(),
-        imageUrl: null
-      });
-      setNewMessage('');
+    if (e) {
+      e.preventDefault(); // Prevent form submission
     }
+    
+    const trimmedMessage = newMessage.trim();
+    if (!trimmedMessage) {
+      setNewMessage(''); // Clear even if empty
+      return;
+    }
+
+    // Check if message is too long (should be handled by maxLength but just in case)
+    if (trimmedMessage.length > 400) {
+      showNotification('Error', 'Message is too long (max 400 characters)');
+      return;
+    }
+
+    socket.emit('send_message', {
+      content: trimmedMessage,
+      imageUrl: null
+    });
+    setNewMessage('');
   };
 
   // Handle image upload
@@ -667,14 +681,21 @@ function ChatRoom({ socket, userData, currentRoom, onBack, theme, soundEnabled, 
 
         <form className="message-input-area" onSubmit={sendMessage}>
           <div className="input-wrapper">
-            <textarea
-              className="message-input"
-              placeholder="Type your message here... (400 characters max)"
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              maxLength={400}
-              rows="3"
-            />
+           <textarea
+  className="message-input"
+  placeholder="Type your message here... (Press Enter to send, Shift+Enter for new line)"
+  value={newMessage}
+  onChange={(e) => setNewMessage(e.target.value)}
+  onKeyDown={(e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault(); // Prevent new line
+      sendMessage(e); // Send the message
+    }
+    // Shift+Enter will create new line (default behavior)
+  }}
+  maxLength={400}
+  rows="3"
+/>
             <div className={`char-count ${newMessage.length > 350 ? 'warning' : ''} ${newMessage.length >= 400 ? 'error' : ''}`}>
               {newMessage.length}/400
             </div>
