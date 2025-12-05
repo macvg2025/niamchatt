@@ -15,57 +15,78 @@ const io = socketIo(server, {
 });
 
 app.use(cors());
-// Serve static files from root folder (for msg.mp3)
-app.use(express.static('../'));
 app.use(express.json());
 
-// Store data in memory (we'll add database later)
+// Store data in memory
 const users = new Map(); // socket.id -> user data
 const rooms = new Map(); // roomId -> room data
+const privateRooms = new Map(); // roomCode -> room data
 
-// Hardcoded admin username - CHANGE THIS TO YOUR SECRET USERNAME
+// Constants
 const ADMIN_USERNAME = "CharlieMartin12344";
+const MAX_ROOM_USERS = 15;
+const MAX_MESSAGE_LENGTH = 400;
+const PRIVATE_ROOM_CODE_LENGTH = 6;
 
-// Store private rooms
-const privateRooms = new Map(); // roomCode -> roomData
-
-// Generate 6-character room code
+// Utility functions
 function generateRoomCode() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let code = '';
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < PRIVATE_ROOM_CODE_LENGTH; i++) {
     code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return code;
 }
 
+function sanitizeMessage(content) {
+  return content.substring(0, MAX_MESSAGE_LENGTH).trim();
+}
+
+function formatUserForDisplay(username) {
+  return username === ADMIN_USERNAME ? "Admin - Niam" : username;
+}
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    users: users.size,
+    rooms: rooms.size,
+    privateRooms: privateRooms.size,
+    version: '2.0.0'
+  });
+});
+
 // Socket.io connection handling
 io.on('connection', (socket) => {
-  console.log('New user connected:', socket.id);
+  console.log('New connection:', socket.id);
 
-  // Set username
+  // ========== USER MANAGEMENT ==========
   socket.on('set_username', (username) => {
-    const displayName = username === ADMIN_USERNAME ? "Admin - Niam" : username;
+    const displayName = formatUserForDisplay(username);
+    const isAdmin = username === ADMIN_USERNAME;
+    
     const userData = {
       id: socket.id,
       username: username,
       displayName: displayName,
-      isAdmin: username === ADMIN_USERNAME,
+      isAdmin: isAdmin,
       currentRoom: null,
-      joinedAt: Date.now()
+      joinedAt: Date.now(),
+      lastActive: Date.now()
     };
     
     users.set(socket.id, userData);
     socket.emit('username_set', userData);
-    console.log(`User set: ${username} -> ${displayName} (Admin: ${userData.isAdmin})`);
+    console.log(`User set: ${username} -> ${displayName} (Admin: ${isAdmin})`);
   });
 
-  // Join room (public or private)
+  // ========== ROOM MANAGEMENT ==========
   socket.on('join_room', ({ roomId, roomName, isPrivate = false }) => {
     const user = users.get(socket.id);
     if (!user) return;
 
-    // Leave previous room if any
+    // Leave previous room
     if (user.currentRoom) {
       socket.leave(user.currentRoom);
       const oldRoom = rooms.get(user.currentRoom);
@@ -81,45 +102,65 @@ io.on('connection', (socket) => {
     // Join new room
     socket.join(roomId);
     user.currentRoom = roomId;
+    user.lastActive = Date.now();
 
     // Create room if it doesn't exist
     if (!rooms.has(roomId)) {
-      rooms.set(roomId, {
+      const roomCode = isPrivate ? generateRoomCode() : null;
+      const room = {
         id: roomId,
-        name: roomName || 'Public Chat',
+        name: roomName || (isPrivate ? `Private Room ${roomCode}` : 'Public Chat'),
         isPrivate: isPrivate,
-        code: isPrivate ? generateRoomCode() : null,
+        code: roomCode,
         createdBy: user.username,
         createdAt: Date.now(),
         users: [],
-        messages: []
-      });
+        messages: [],
+        maxUsers: isPrivate ? MAX_ROOM_USERS : Infinity
+      };
+
+      rooms.set(roomId, room);
+      if (isPrivate && roomCode) {
+        privateRooms.set(roomCode, room);
+      }
     }
 
     const room = rooms.get(roomId);
     
+    // Check room capacity
+    if (room.users.length >= room.maxUsers) {
+      socket.emit('room_error', { message: 'Room is full (max 15 users)' });
+      socket.leave(roomId);
+      user.currentRoom = null;
+      return;
+    }
+
     // Add user to room
     room.users.push({
       id: socket.id,
       username: user.displayName,
-      isAdmin: user.isAdmin
+      isAdmin: user.isAdmin,
+      isCreator: user.username === room.createdBy
     });
 
     // Notify room about new user
     socket.to(roomId).emit('user_joined', {
       username: user.displayName,
       userId: socket.id,
-      isAdmin: user.isAdmin
+      isAdmin: user.isAdmin,
+      isCreator: user.username === room.createdBy
     });
 
-    // Send room data to the joining user
+    // Send room data to joining user
     socket.emit('room_joined', {
       room: {
         id: room.id,
         name: room.name,
         isPrivate: room.isPrivate,
         code: room.code,
-        userCount: room.users.length
+        userCount: room.users.length,
+        maxUsers: room.maxUsers,
+        createdBy: room.createdBy
       },
       users: room.users,
       messages: room.messages.slice(-45) // Last 45 messages
@@ -128,7 +169,74 @@ io.on('connection', (socket) => {
     console.log(`${user.displayName} joined ${room.name} (${roomId})`);
   });
 
-  // Send message
+  // ========== PRIVATE ROOM SPECIFIC ==========
+  socket.on('create_private_room', ({ roomName }) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const roomCode = generateRoomCode();
+    const roomId = `private_${roomCode}`;
+    
+    const room = {
+      id: roomId,
+      name: roomName || `Private Room ${roomCode}`,
+      code: roomCode,
+      createdBy: user.username,
+      createdAt: Date.now(),
+      isPrivate: true,
+      users: [],
+      messages: [],
+      maxUsers: MAX_ROOM_USERS
+    };
+
+    rooms.set(roomId, room);
+    privateRooms.set(roomCode, room);
+
+    socket.emit('private_room_created', {
+      roomId: roomId,
+      roomCode: roomCode,
+      roomName: room.name
+    });
+
+    console.log(`Private room created: ${room.name} (${roomCode}) by ${user.displayName}`);
+  });
+
+  socket.on('join_private_room', ({ roomCode }) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const roomData = privateRooms.get(roomCode.toUpperCase());
+    if (!roomData) {
+      socket.emit('room_error', { message: 'Room not found. Check the code.' });
+      return;
+    }
+
+    // Join using existing join_room event
+    socket.emit('join_room', {
+      roomId: roomData.id,
+      roomName: roomData.name,
+      isPrivate: true
+    });
+  });
+
+  socket.on('get_my_rooms', () => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const myRooms = Array.from(privateRooms.values())
+      .filter(room => room.createdBy === user.username)
+      .map(room => ({
+        id: room.id,
+        name: room.name,
+        code: room.code,
+        createdAt: room.createdAt,
+        userCount: room.users.length
+      }));
+
+    socket.emit('my_rooms_list', myRooms);
+  });
+
+  // ========== MESSAGING ==========
   socket.on('send_message', ({ content, imageUrl }) => {
     const user = users.get(socket.id);
     if (!user || !user.currentRoom) return;
@@ -136,14 +244,14 @@ io.on('connection', (socket) => {
     const room = rooms.get(user.currentRoom);
     if (!room) return;
 
-    // Check message length
-    const trimmedContent = content.substring(0, 400);
-    
+    const sanitizedContent = sanitizeMessage(content);
+    if (!sanitizedContent && !imageUrl) return;
+
     const message = {
       id: Date.now().toString(),
       userId: socket.id,
       username: user.displayName,
-      content: trimmedContent,
+      content: sanitizedContent,
       imageUrl: imageUrl || null,
       timestamp: new Date().toISOString(),
       likes: [],
@@ -156,88 +264,65 @@ io.on('connection', (socket) => {
 
     room.messages.push(message);
     
-    // Send to everyone in the room
+    // Update user's last active time
+    user.lastActive = Date.now();
+    
+    // Send to everyone in room
     io.to(user.currentRoom).emit('new_message', message);
     
-    console.log(`Message from ${user.displayName} in ${room.name}: ${trimmedContent.substring(0, 30)}...`);
+    console.log(`Message from ${user.displayName} in ${room.name}: ${sanitizedContent.substring(0, 50)}...`);
   });
 
-  // Like message
+  // ========== MESSAGE REACTIONS ==========
   socket.on('like_message', ({ messageId }) => {
     handleReaction(socket.id, messageId, 'like');
   });
 
-  // Dislike message
   socket.on('dislike_message', ({ messageId }) => {
     handleReaction(socket.id, messageId, 'dislike');
   });
-  // Create private room
-  socket.on('create_private_room', ({ roomName }) => {
+
+  socket.on('add_reaction', ({ messageId, emoji }) => {
     const user = users.get(socket.id);
-    if (!user) return;
+    if (!user || !user.currentRoom) return;
 
-    const roomCode = generateRoomCode();
-    const roomId = `private_${roomCode}`;
-    
-    const room = {
-      id: roomId,
-      name: roomName,
-      code: roomCode,
-      createdBy: user.username,
-      createdAt: Date.now(),
-      isPrivate: true,
-      users: [],
-      messages: []
-    };
+    const room = rooms.get(user.currentRoom);
+    if (!room) return;
 
-    privateRooms.set(roomCode, room);
-    rooms.set(roomId, room);
+    const message = room.messages.find(m => m.id === messageId);
+    if (!message) return;
 
-    socket.emit('private_room_created', {
-      roomId: roomId,
-      roomCode: roomCode,
-      roomName: roomName
-    });
-
-    console.log(`Private room created: ${roomName} (${roomCode})`);
-  });
-
-  // Join private room with code
-  socket.on('join_private_room', ({ roomCode }) => {
-    const user = users.get(socket.id);
-    if (!user) return;
-
-    const roomData = privateRooms.get(roomCode.toUpperCase());
-    if (!roomData) {
-      socket.emit('room_error', { message: 'Room not found' });
-      return;
+    if (!message.reactions[emoji]) {
+      message.reactions[emoji] = [];
     }
 
-    // Join the room using existing join_room event
-    socket.emit('join_room', {
-      roomId: roomData.id,
-      roomName: roomData.name,
-      isPrivate: true
+    if (!message.reactions[emoji].includes(socket.id)) {
+      message.reactions[emoji].push(socket.id);
+      io.to(user.currentRoom).emit('message_updated', message);
+    }
+  });
+
+  // ========== TYPING INDICATORS ==========
+  socket.on('typing_start', () => {
+    const user = users.get(socket.id);
+    if (!user || !user.currentRoom) return;
+
+    socket.to(user.currentRoom).emit('user_typing', {
+      userId: socket.id,
+      username: user.displayName
     });
   });
 
-  // Get user's private rooms
-  socket.on('get_my_rooms', () => {
+  socket.on('typing_stop', () => {
     const user = users.get(socket.id);
-    if (!user) return;
+    if (!user || !user.currentRoom) return;
 
-    const myRooms = Array.from(privateRooms.values())
-      .filter(room => room.createdBy === user.username)
-      .map(room => ({
-        id: room.id,
-        name: room.name,
-        code: room.code,
-        createdAt: room.createdAt
-      }));
-
-    socket.emit('my_rooms_list', myRooms);
+    socket.to(user.currentRoom).emit('user_stopped_typing', { 
+      userId: socket.id 
+    });
   });
-  // Handle reaction helper
+
+  // ========== HELPER FUNCTIONS ==========
   function handleReaction(userId, messageId, type) {
     const user = users.get(userId);
     if (!user || !user.currentRoom) return;
@@ -283,7 +368,7 @@ io.on('connection', (socket) => {
     io.to(user.currentRoom).emit('message_updated', message);
   }
 
-  // Disconnect
+  // ========== DISCONNECTION ==========
   socket.on('disconnect', () => {
     const user = users.get(socket.id);
     if (user) {
@@ -295,6 +380,17 @@ io.on('connection', (socket) => {
             username: user.displayName,
             userId: socket.id
           });
+
+          // Clean up empty private rooms after 5 minutes
+          if (room.isPrivate && room.users.length === 0) {
+            setTimeout(() => {
+              if (rooms.get(room.id)?.users.length === 0) {
+                rooms.delete(room.id);
+                if (room.code) privateRooms.delete(room.code);
+                console.log(`Cleaned up empty room: ${room.name}`);
+              }
+            }, 5 * 60 * 1000); // 5 minutes
+          }
         }
       }
       users.delete(socket.id);
@@ -303,17 +399,9 @@ io.on('connection', (socket) => {
   });
 });
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    users: users.size,
-    rooms: rooms.size
-  });
-});
-
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`✅ NiamChat Server v2.0.0 running on port ${PORT}`);
   console.log(`📡 WebSocket server ready for connections`);
+  console.log(`👑 Admin username: ${ADMIN_USERNAME}`);
 });
