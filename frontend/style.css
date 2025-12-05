@@ -1986,3 +1986,17 @@ body {
   0%, 100% { opacity: 0.3; }
   50% { opacity: 0.8; }
 }
+/* Delete button */
+.action-button-small.delete-btn {
+  color: #ef4444 !important;
+  font-size: 0.9rem !important;
+}
+
+.action-button-small.delete-btn:hover {
+  background: rgba(239, 68, 68, 0.2) !important;
+}
+
+/* Kick section */
+.kick-controls h4 {
+  margin-bottom: 10px;
+}
