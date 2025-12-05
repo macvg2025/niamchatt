@@ -1639,3 +1639,136 @@ body.theme-crystal { background: var(--bg-primary); }
         display: none !important;
     }
 }
+/* ===== MOBILE/SIDEBAR MODE ===== */
+/* This only activates when the window is narrow (like your sidebar) */
+@media (max-width: 768px) {
+  /* Force mobile layout */
+  body.mobile-mode .chat-container,
+  body.sidebar-mode .chat-container {
+    height: 100vh !important;
+    max-width: 100% !important;
+    border-radius: 0 !important;
+    flex-direction: column !important;
+    margin: 0 !important;
+  }
+  
+  body.mobile-mode .sidebar,
+  body.sidebar-mode .sidebar {
+    width: 100% !important;
+    height: auto !important;
+    max-height: 200px !important;
+    border-right: none !important;
+    border-bottom: 1px solid var(--border-color) !important;
+    padding: 15px !important;
+  }
+  
+  body.mobile-mode .chat-main,
+  body.sidebar-mode .chat-main {
+    flex: 1 !important;
+    min-height: 0 !important;
+  }
+  
+  body.mobile-mode .messages-container,
+  body.sidebar-mode .messages-container {
+    padding: 15px !important;
+  }
+  
+  body.mobile-mode .message,
+  body.sidebar-mode .message {
+    max-width: 90% !important;
+    padding: 15px !important;
+  }
+  
+  body.mobile-mode .message-input-area,
+  body.sidebar-mode .message-input-area {
+    padding: 15px !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+  
+  body.mobile-mode .input-wrapper,
+  body.sidebar-mode .input-wrapper {
+    width: 100% !important;
+  }
+  
+  body.mobile-mode .input-actions,
+  body.sidebar-mode .input-actions {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+  
+  body.mobile-mode .message-input,
+  body.sidebar-mode .message-input {
+    min-height: 50px !important;
+    max-height: 80px !important;
+    font-size: 0.95rem !important;
+  }
+  
+  /* Hide less important elements in sidebar mode */
+  body.sidebar-mode .user-avatar,
+  body.sidebar-mode .room-icon {
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 1rem !important;
+  }
+  
+  body.sidebar-mode .room-details h2 {
+    font-size: 1.2rem !important;
+  }
+  
+  body.sidebar-mode .online-users {
+    display: none !important; /* Hide in sidebar to save space */
+  }
+  
+  body.sidebar-mode .room-switcher {
+    display: flex !important;
+    gap: 10px !important;
+    margin-bottom: 15px !important;
+  }
+  
+  body.sidebar-mode .switch-button {
+    padding: 10px !important;
+    font-size: 0.9rem !important;
+    text-align: center !important;
+  }
+  
+  /* Compact user info */
+  body.sidebar-mode .user-info {
+    padding: 15px !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    gap: 15px !important;
+  }
+  
+  body.sidebar-mode .user-avatar {
+    margin: 0 !important;
+  }
+  
+  body.sidebar-mode .username-display {
+    font-size: 1rem !important;
+    text-align: left !important;
+  }
+}
+
+/* Ultra-narrow mode (for really thin sidebars) */
+@media (max-width: 480px) {
+  body.mobile-mode .hub-button,
+  body.sidebar-mode .hub-button {
+    padding: 40px 15px !important;
+    font-size: 1.2rem !important;
+  }
+  
+  body.mobile-mode .button-icon,
+  body.sidebar-mode .button-icon {
+    font-size: 2rem !important;
+  }
+  
+  body.sidebar-mode .chat-header {
+    padding: 15px !important;
+  }
+  
+  body.sidebar-mode .chat-actions {
+    display: none !important; /* Hide theme/settings in sidebar */
+  }
+}
