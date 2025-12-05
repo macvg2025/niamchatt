@@ -1,3 +1,8 @@
+// Make socket and userData globally available for Message component
+if (typeof window !== 'undefined') {
+  window.socket = socket;
+  // Will be set later when userData is available
+}
 import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 
@@ -29,7 +34,14 @@ function App() {
     const savedSound = localStorage.getItem('niamchat_sound') !== 'false';
     const savedNotifications = localStorage.getItem('niamchat_notifications') !== 'false';
     const visited = localStorage.getItem('niamchat_visited');
-
+  
+    // In App component, after setting userData:
+useEffect(() => {
+  if (userData && typeof window !== 'undefined') {
+    window.userData = userData;
+  }
+}, [userData]);
+    
     if (savedUsername) {
       setUsername(savedUsername);
       setIsFirstVisit(!visited);
@@ -57,7 +69,21 @@ function App() {
         joinRoom('public', 'Public Chat');
       }
     });
+    // Add to the useEffect with other socket.on() calls:
+socket.on('message_deleted', ({ messageId, deletedBy }) => {
+  setMessages(prev => prev.filter(msg => msg.id !== messageId));
+  showNotification('Message Deleted', `${deletedBy} deleted a message`);
+});
 
+socket.on('user_kicked', ({ username, kickedBy }) => {
+  setOnlineUsers(prev => prev.filter(user => user.username !== username));
+  showNotification('User Kicked', `${username} was kicked by ${kickedBy}`);
+});
+
+socket.on('you_were_kicked', ({ kickedBy, reason }) => {
+  alert(`You were kicked by ${kickedBy}. Reason: ${reason}`);
+  window.location.reload(); // Refresh page
+});
     socket.on('admin_granted', (data) => {
       if (userData?.username === data.grantedTo) {
         setUserData(prev => ({ ...prev, isAdmin: true, displayName: "⭐ Admin" }));
@@ -1106,6 +1132,20 @@ function Message({ message, isOwn, onLike, onDislike, onCopy }) {
         >
           📋 Copy
         </button>
+        
+  {window.userData?.isOwner && (
+    <button 
+      className="action-button-small delete-btn"
+      onClick={() => {
+        if (window.confirm('Delete this message?')) {
+          window.socket.emit('delete_message', { messageId: message.id });
+        }
+      }}
+      title="Delete message (Owner only)"
+    >
+      🗑️ Delete
+    </button>
+  )}
       </div>
     </div>
   );
