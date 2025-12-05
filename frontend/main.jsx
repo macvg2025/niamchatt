@@ -1,3 +1,33 @@
+// Detect if we're in an iframe or small window
+const detectViewMode = () => {
+  const width = window.innerWidth;
+  
+  // If we're in an iframe
+  if (window.self !== window.top) {
+    document.body.classList.add('iframe-mode');
+    
+    // Check width for sidebar mode
+    if (width <= 768) {
+      document.body.classList.add('sidebar-mode');
+      document.body.classList.remove('mobile-mode');
+    } else {
+      document.body.classList.remove('sidebar-mode');
+    }
+  }
+  
+  // Regular mobile detection
+  if (width <= 768 && window.self === window.top) {
+    document.body.classList.add('mobile-mode');
+    document.body.classList.remove('sidebar-mode');
+  } else if (window.self === window.top) {
+    document.body.classList.remove('mobile-mode', 'sidebar-mode');
+  }
+};
+
+// Run on load and resize
+window.addEventListener('load', detectViewMode);
+window.addEventListener('resize', detectViewMode);
+
 import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { io } from 'socket.io-client';
