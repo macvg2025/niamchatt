@@ -820,7 +820,86 @@ function ChatRoom({
             )}
           </div>
         )}
-
+{userData?.isOwner && (
+  <div className="owner-panel">
+    <h3>👑 Owner Controls</h3>
+    <div className="admin-controls">
+      <input
+        type="text"
+        placeholder="Enter username"
+        value={adminUsername}
+        onChange={(e) => setAdminUsername(e.target.value)}
+        className="admin-input"
+      />
+      <select 
+        value={adminAction}
+        onChange={(e) => setAdminAction(e.target.value)}
+        className="admin-select"
+      >
+        <option value="grant">Grant Admin</option>
+        <option value="revoke">Revoke Admin</option>
+      </select>
+      <button onClick={handleAdminAction} className="admin-button">
+        {adminAction === 'grant' ? 'Grant' : 'Revoke'}
+      </button>
+    </div>
+    
+    {/* ADD KICK USER SECTION */}
+    <div className="kick-controls" style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+      <h4 style={{ color: '#ef4444', marginBottom: '10px' }}>⚠️ Kick User</h4>
+      <div style={{ display: 'flex', gap: '10px' }}>
+        <input
+          type="text"
+          id="kickUsername"
+          placeholder="Username to kick"
+          style={{ 
+            flex: 1, 
+            padding: '10px', 
+            background: 'rgba(239, 68, 68, 0.1)', 
+            border: '1px solid #ef4444',
+            borderRadius: '8px',
+            color: '#f8fafc'
+          }}
+        />
+        <button onClick={() => {
+          const username = document.getElementById('kickUsername').value.trim();
+          if (!username) return;
+          
+          // Find user ID from online users
+          const userToKick = onlineUsers.find(u => u.username === username);
+          if (!userToKick) {
+            showNotification('Error', 'User not found online');
+            return;
+          }
+          
+          if (window.confirm(`Kick ${username} from chat?`)) {
+            socket.emit('kick_user', { userIdToKick: userToKick.id });
+            document.getElementById('kickUsername').value = '';
+          }
+        }} style={{
+          padding: '10px 20px',
+          background: '#ef4444',
+          color: 'white',
+          border: 'none',
+          borderRadius: '8px',
+          cursor: 'pointer',
+          fontWeight: 'bold'
+        }}>
+          Kick
+        </button>
+      </div>
+      <small style={{ color: '#fca5a5', display: 'block', marginTop: '5px' }}>
+        Kick immediately removes user from chat
+      </small>
+    </div>
+    
+    {adminList.length > 0 && (
+      <div className="admin-list">
+        <small>Current Admins: {adminList.join(', ')}</small>
+      </div>
+    )}
+  </div>
+)}
         <div className="messages-container">
           {messages.map((message) => (
             <Message
