@@ -23,7 +23,7 @@ const rooms = new Map(); // roomId -> room data
 const privateRooms = new Map(); // roomCode -> room data
 
 // Constants
-const ADMIN_USERNAME = "CharlieMartin12344";
+const ADMIN_USERNAME = "123HIfg^";
 const MAX_ROOM_USERS = 15;
 const MAX_MESSAGE_LENGTH = 400;
 const PRIVATE_ROOM_CODE_LENGTH = 6;
