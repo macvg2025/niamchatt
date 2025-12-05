@@ -190,7 +190,29 @@ io.on('connection', (socket) => {
   socket.on('like_message', ({ messageId }) => {
     handleReaction(socket.id, messageId, 'like');
   });
-
+  // ========== DELETE MESSAGE (OWNER ONLY) ==========
+  socket.on('delete_message', ({ messageId }) => {
+    const user = users.get(socket.id);
+    if (!user || !user.isOwner) return; // ONLY OWNER CAN DELETE
+    
+    const room = rooms.get(user.currentRoom);
+    if (!room) return;
+    
+    // Find and remove message
+    const messageIndex = room.messages.findIndex(m => m.id === messageId);
+    if (messageIndex === -1) return;
+    
+    // Remove message
+    const deletedMessage = room.messages.splice(messageIndex, 1)[0];
+    
+    // Tell everyone in room
+    io.to(user.currentRoom).emit('message_deleted', {
+      messageId: messageId,
+      deletedBy: user.username
+    });
+    
+    console.log(`Owner ${user.username} deleted message ${messageId}`);
+  });
   socket.on('dislike_message', ({ messageId }) => {
     handleReaction(socket.id, messageId, 'dislike');
   });
@@ -410,7 +432,44 @@ io.on('connection', (socket) => {
       owner: OWNER_USERNAME
     });
   });
-
+  // ========== KICK USER (OWNER ONLY) ==========
+  socket.on('kick_user', ({ userIdToKick }) => {
+    const owner = users.get(socket.id);
+    if (!owner || !owner.isOwner) return; // ONLY OWNER CAN KICK
+    
+    const userToKick = users.get(userIdToKick);
+    if (!userToKick) return;
+    
+    // Don't kick yourself
+    if (userIdToKick === socket.id) return;
+    
+    // Get their current room
+    const roomId = userToKick.currentRoom;
+    if (!roomId) return;
+    
+    // Remove from room
+    const room = rooms.get(roomId);
+    if (room) {
+      room.users = room.users.filter(u => u.id !== userIdToKick);
+    }
+    
+    // Tell the user they were kicked
+    io.to(userIdToKick).emit('you_were_kicked', {
+      kickedBy: owner.username,
+      reason: "Owner decision"
+    });
+    
+    // Actually disconnect them
+    io.sockets.sockets.get(userIdToKick)?.disconnect();
+    
+    // Tell room
+    io.to(roomId).emit('user_kicked', {
+      username: userToKick.username,
+      kickedBy: owner.username
+    });
+    
+    console.log(`Owner ${owner.username} kicked ${userToKick.username}`);
+  });
   // ========== DISCONNECTION ==========
   socket.on('disconnect', () => {
     const user = users.get(socket.id);
