@@ -53,7 +53,17 @@ function App() {
     const savedSound = localStorage.getItem('niamchat_sound') !== 'false';
     const savedNotifications = localStorage.getItem('niamchat_notifications') !== 'false';
     const visited = localStorage.getItem('niamchat_visited');
-
+// Add to your existing useEffect or at top level:
+useEffect(() => {
+  const handleMessage = (event) => {
+    if (event.data.type === 'SET_MODE') {
+      document.body.classList.add(event.data.mode + '-mode');
+    }
+  };
+  
+  window.addEventListener('message', handleMessage);
+  return () => window.removeEventListener('message', handleMessage);
+}, []);
     if (savedUsername) {
       setUsername(savedUsername);
       setIsFirstVisit(!visited);
