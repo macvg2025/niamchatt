@@ -533,7 +533,7 @@ function ChatRoom({ socket, userData, currentRoom, onBack, theme, soundEnabled, 
   const playMessageSound = useCallback(() => {
     if (soundEnabled) {
       try {
-        const audio = new Audio('https://niamchat-backend.onrender.com/sound/msg.mp3');
+        const audio = new Audio('https://macvg2025.github.io/niamchatt/msg.mp3');
         audio.volume = 0.3;
         audio.play().catch(() => {
           // Fallback to beep sound
