@@ -1,8 +1,3 @@
-// Make socket and userData globally available for Message component
-if (typeof window !== 'undefined') {
-  window.socket = socket;
-  // Will be set later when userData is available
-}
 import React, { useState, useEffect, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 
@@ -34,14 +29,7 @@ function App() {
     const savedSound = localStorage.getItem('niamchat_sound') !== 'false';
     const savedNotifications = localStorage.getItem('niamchat_notifications') !== 'false';
     const visited = localStorage.getItem('niamchat_visited');
-  
-    // In App component, after setting userData:
-useEffect(() => {
-  if (userData && typeof window !== 'undefined') {
-    window.userData = userData;
-  }
-}, [userData]);
-    
+
     if (savedUsername) {
       setUsername(savedUsername);
       setIsFirstVisit(!visited);
@@ -69,21 +57,7 @@ useEffect(() => {
         joinRoom('public', 'Public Chat');
       }
     });
-    // Add to the useEffect with other socket.on() calls:
-socket.on('message_deleted', ({ messageId, deletedBy }) => {
-  setMessages(prev => prev.filter(msg => msg.id !== messageId));
-  showNotification('Message Deleted', `${deletedBy} deleted a message`);
-});
 
-socket.on('user_kicked', ({ username, kickedBy }) => {
-  setOnlineUsers(prev => prev.filter(user => user.username !== username));
-  showNotification('User Kicked', `${username} was kicked by ${kickedBy}`);
-});
-
-socket.on('you_were_kicked', ({ kickedBy, reason }) => {
-  alert(`You were kicked by ${kickedBy}. Reason: ${reason}`);
-  window.location.reload(); // Refresh page
-});
     socket.on('admin_granted', (data) => {
       if (userData?.username === data.grantedTo) {
         setUserData(prev => ({ ...prev, isAdmin: true, displayName: "⭐ Admin" }));
@@ -219,7 +193,7 @@ function LandingPage({ username, setUsername, onSubmit, theme }) {
       </form>
       <div className="mt-3 text-center">
         <small style={{ color: '#94a3b8' }}>
-          Choose any username. Owner: Niam
+          Choose any username. Owner: CharlieMartin12344
         </small>
       </div>
     </div>
@@ -284,7 +258,7 @@ function MainHub({
         </div>
 
         <div className="theme-selection">
-          <p style={{ marginBottom: '10px', color: '#f8fafc' }}>Choose a theme:</p>
+          <p style={{ marginBottom: '10px', color: '#f8fafc' }}>Choose a theme:</</p>
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             {['seaside', 'cozy', 'neon', 'glacier', 'sunset', 'midnight', 'minty', 'cloudline', 'urban', 'crystal'].map((t) => (
               <button
@@ -846,86 +820,7 @@ function ChatRoom({
             )}
           </div>
         )}
-{userData?.isOwner && (
-  <div className="owner-panel">
-    <h3>👑 Owner Controls</h3>
-    <div className="admin-controls">
-      <input
-        type="text"
-        placeholder="Enter username"
-        value={adminUsername}
-        onChange={(e) => setAdminUsername(e.target.value)}
-        className="admin-input"
-      />
-      <select 
-        value={adminAction}
-        onChange={(e) => setAdminAction(e.target.value)}
-        className="admin-select"
-      >
-        <option value="grant">Grant Admin</option>
-        <option value="revoke">Revoke Admin</option>
-      </select>
-      <button onClick={handleAdminAction} className="admin-button">
-        {adminAction === 'grant' ? 'Grant' : 'Revoke'}
-      </button>
-    </div>
-    
-    {/* ADD KICK USER SECTION */}
-    <div className="kick-controls" style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-      <h4 style={{ color: '#ef4444', marginBottom: '10px' }}>⚠️ Kick User</h4>
-      <div style={{ display: 'flex', gap: '10px' }}>
-        <input
-          type="text"
-          id="kickUsername"
-          placeholder="Username to kick"
-          style={{ 
-            flex: 1, 
-            padding: '10px', 
-            background: 'rgba(239, 68, 68, 0.1)', 
-            border: '1px solid #ef4444',
-            borderRadius: '8px',
-            color: '#f8fafc'
-          }}
-        />
-        <button onClick={() => {
-          const username = document.getElementById('kickUsername').value.trim();
-          if (!username) return;
-          
-          // Find user ID from online users
-          const userToKick = onlineUsers.find(u => u.username === username);
-          if (!userToKick) {
-            showNotification('Error', 'User not found online');
-            return;
-          }
-          
-          if (window.confirm(`Kick ${username} from chat?`)) {
-            socket.emit('kick_user', { userIdToKick: userToKick.id });
-            document.getElementById('kickUsername').value = '';
-          }
-        }} style={{
-          padding: '10px 20px',
-          background: '#ef4444',
-          color: 'white',
-          border: 'none',
-          borderRadius: '8px',
-          cursor: 'pointer',
-          fontWeight: 'bold'
-        }}>
-          Kick
-        </button>
-      </div>
-      <small style={{ color: '#fca5a5', display: 'block', marginTop: '5px' }}>
-        Kick immediately removes user from chat
-      </small>
-    </div>
-    
-    {adminList.length > 0 && (
-      <div className="admin-list">
-        <small>Current Admins: {adminList.join(', ')}</small>
-      </div>
-    )}
-  </div>
-)}
+
         <div className="messages-container">
           {messages.map((message) => (
             <Message
@@ -1132,20 +1027,6 @@ function Message({ message, isOwn, onLike, onDislike, onCopy }) {
         >
           📋 Copy
         </button>
-        
-  {window.userData?.isOwner && (
-    <button 
-      className="action-button-small delete-btn"
-      onClick={() => {
-        if (window.confirm('Delete this message?')) {
-          window.socket.emit('delete_message', { messageId: message.id });
-        }
-      }}
-      title="Delete message (Owner only)"
-    >
-      🗑️ Delete
-    </button>
-  )}
       </div>
     </div>
   );
