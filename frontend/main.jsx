@@ -191,11 +191,11 @@ function MainHub({
           <span className="button-description">Chat with everyone online</span>
         </button>
         
-        <button className="hub-button private" onClick={onSelectPrivate}>
-          <span className="button-icon">🔒</span>
-          <span>Private Chats</span>
-          <span className="button-description">Create or join private rooms</span>
-        </button>
+       <button className="hub-button private" onClick={onSelectPrivate}>
+  <span className="button-icon">🔒</span>
+  <span>Private Chats</span>
+  <span className="button-description">Coming soon - check it out!</span>
+</button>
       </div>
 
       <div className="first-time-settings">
@@ -280,171 +280,202 @@ function getThemeColor(theme) {
 
 // ==================== PRIVATE ROOMS ====================
 function PrivateRooms({ onBack, onJoinRoom, theme, socket }) {
-  const [roomName, setRoomName] = useState('');
-  const [roomCode, setRoomCode] = useState('');
-  const [error, setError] = useState('');
-  const [createdCode, setCreatedCode] = useState('');
-
-  const generateRoomCode = () => {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let code = '';
-    for (let i = 0; i < 6; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return code;
-  };
-
-  const createRoom = () => {
-    if (!roomName.trim()) {
-      setError('Please enter a room name');
-      return;
-    }
-
-    const code = generateRoomCode();
-    setCreatedCode(code);
-    
-    // Store in localStorage
-    const rooms = JSON.parse(localStorage.getItem('niamchat_my_rooms') || '[]');
-    rooms.push({
-      id: `private_${code}`,
-      name: roomName.trim(),
-      code: code,
-      createdAt: Date.now()
-    });
-    localStorage.setItem('niamchat_my_rooms', JSON.stringify(rooms));
-    
-    setError('');
-    setRoomName('');
-  };
-
-  const joinWithCode = () => {
-    const code = roomCode.trim().toUpperCase();
-    if (code.length !== 6) {
-      setError('Room code must be 6 characters');
-      return;
-    }
-
-    // Join the room (will create if doesn't exist)
-    onJoinRoom(`private_${code}`, `Private Room ${code}`, true);
-    setError('');
-    setRoomCode('');
-  };
-
-  const joinRoomFromList = (code) => {
-    onJoinRoom(`private_${code}`, `Private Room ${code}`, true);
-  };
-
-  // Get rooms from localStorage
-  const myRooms = JSON.parse(localStorage.getItem('niamchat_my_rooms') || '[]');
-
   return (
     <div className="main-hub fade-in-up">
-      <button onClick={onBack} style={{ marginBottom: '30px', padding: '10px 20px' }}>
-        ← Back
+      <button 
+        onClick={onBack}
+        style={{ 
+          marginBottom: '40px', 
+          padding: '12px 24px',
+          background: 'rgba(30, 41, 59, 0.7)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          color: '#f8fafc',
+          borderRadius: '10px',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          fontSize: '1rem'
+        }}
+      >
+        ← Back to Hub
       </button>
       
-      <h1 className="hub-title">Private Chats</h1>
-      
-      {error && (
-        <div style={{ 
-          background: 'rgba(239, 68, 68, 0.2)', 
-          border: '1px solid #ef4444',
-          color: '#fca5a5',
-          padding: '15px',
-          borderRadius: '10px',
-          marginBottom: '20px'
+      <div style={{ 
+        textAlign: 'center',
+        marginBottom: '40px'
+      }}>
+        <h1 className="hub-title" style={{ fontSize: '3rem', marginBottom: '15px' }}>
+          🔒 Private Chats
+        </h1>
+        <p style={{ 
+          color: '#94a3b8', 
+          fontSize: '1.3rem',
+          maxWidth: '600px',
+          margin: '0 auto',
+          lineHeight: '1.6'
         }}>
-          {error}
-        </div>
-      )}
-      
-      {createdCode && (
-        <div style={{ 
-          background: 'rgba(34, 197, 94, 0.2)', 
-          border: '1px solid #22c55e',
-          color: '#86efac',
-          padding: '15px',
-          borderRadius: '10px',
-          marginBottom: '20px',
-          textAlign: 'center'
-        }}>
-          <div style={{ fontSize: '1.2rem', marginBottom: '5px' }}>
-            ✅ Room Created!
-          </div>
-          <div style={{ fontFamily: 'monospace', fontSize: '1.5rem', letterSpacing: '2px' }}>
-            Code: <strong>{createdCode}</strong>
-          </div>
-          <div style={{ marginTop: '10px', fontSize: '0.9rem' }}>
-            Share this code with friends to join
-          </div>
-        </div>
-      )}
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '40px', marginBottom: '50px' }}>
-        {/* Create Room */}
-        <div style={{ background: 'rgba(30, 41, 59, 0.7)', padding: '30px', borderRadius: '15px' }}>
-          <h3 style={{ marginBottom: '20px', color: '#f8fafc' }}>Create New Room</h3>
-          <input
-            type="text"
-            placeholder="Room name"
-            value={roomName}
-            onChange={(e) => setRoomName(e.target.value)}
-            style={{ width: '100%', padding: '15px', marginBottom: '15px', borderRadius: '10px' }}
-            maxLength={30}
-          />
-          <button
-            onClick={createRoom}
-            style={{ width: '100%', padding: '15px', background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer' }}
-          >
-            Create Room
-          </button>
-        </div>
-
-        {/* Join Room */}
-        <div style={{ background: 'rgba(30, 41, 59, 0.7)', padding: '30px', borderRadius: '15px' }}>
-          <h3 style={{ marginBottom: '20px', color: '#f8fafc' }}>Join with Code</h3>
-          <input
-            type="text"
-            placeholder="Enter 6-digit code"
-            value={roomCode}
-            onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-            style={{ width: '100%', padding: '15px', marginBottom: '15px', borderRadius: '10px', textTransform: 'uppercase', letterSpacing: '2px' }}
-            maxLength={6}
-          />
-          <button
-            onClick={joinWithCode}
-            style={{ width: '100%', padding: '15px', background: 'linear-gradient(135deg, #10b981 0%, #34d399 100%)', color: 'white', border: 'none', borderRadius: '10px', cursor: 'pointer' }}
-          >
-            Join Room
-          </button>
-        </div>
+          Create private rooms with shareable codes
+        </p>
       </div>
 
-      {/* Your Rooms */}
-      {myRooms.length > 0 && (
-        <div>
-          <h3 style={{ marginBottom: '20px', color: '#f8fafc' }}>Your Rooms</h3>
-          <div style={{ display: 'grid', gap: '15px' }}>
-            {myRooms.map((room) => (
-              <div key={room.id} style={{ background: 'rgba(30, 41, 59, 0.7)', padding: '20px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontWeight: 'bold', color: '#f8fafc' }}>{room.name}</div>
-                  <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Code: {room.code}</div>
-                </div>
-                <button
-                  onClick={() => joinRoomFromList(room.code)}
-                  style={{ padding: '10px 20px', background: 'rgba(59, 130, 246, 0.2)', border: '1px solid rgba(96, 165, 250, 0.3)', color: '#60a5fa', borderRadius: '8px', cursor: 'pointer' }}
-                >
-                  Join
-                </button>
+      {/* Coming Soon Card */}
+      <div style={{ 
+        background: 'rgba(30, 41, 59, 0.9)',
+        border: '2px solid rgba(139, 92, 246, 0.3)',
+        borderRadius: '20px',
+        padding: '60px 40px',
+        textAlign: 'center',
+        maxWidth: '700px',
+        margin: '0 auto',
+        boxShadow: '0 20px 40px rgba(0, 0, 0, 0.3)',
+        animation: 'fadeInUp 0.6s ease-out'
+      }}>
+        <div style={{ 
+          fontSize: '5rem',
+          marginBottom: '30px',
+          animation: 'pulse 2s infinite'
+        }}>
+          🚧
+        </div>
+        
+        <h2 style={{ 
+          fontSize: '2.5rem',
+          color: '#f8fafc',
+          marginBottom: '20px',
+          background: 'linear-gradient(135deg, #a78bfa 0%, #f0abfc 100%)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text'
+        }}>
+          Coming Soon!
+        </h2>
+        
+        <p style={{ 
+          color: '#cbd5e1',
+          fontSize: '1.2rem',
+          lineHeight: '1.7',
+          marginBottom: '30px',
+          maxWidth: '500px',
+          marginLeft: 'auto',
+          marginRight: 'auto'
+        }}>
+          The private rooms feature is currently in development. 
+          You'll soon be able to create private chat rooms with unique codes 
+          to share with friends!
+        </p>
+        
+        <div style={{ 
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '20px',
+          alignItems: 'center',
+          marginTop: '40px'
+        }}>
+          <button
+            onClick={() => onJoinRoom('public', 'Public Chat')}
+            style={{ 
+              padding: '18px 50px',
+              background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '12px',
+              cursor: 'pointer',
+              fontSize: '1.2rem',
+              fontWeight: '600',
+              transition: 'all 0.3s ease',
+              width: '100%',
+              maxWidth: '300px'
+            }}
+            onMouseOver={(e) => e.target.style.transform = 'translateY(-2px)'}
+            onMouseOut={(e) => e.target.style.transform = 'translateY(0)'}
+          >
+            🌐 Go to Public Chat
+          </button>
+          
+          <button
+            onClick={onBack}
+            style={{ 
+              padding: '15px 40px',
+              background: 'rgba(255, 255, 255, 0.1)',
+              color: '#cbd5e1',
+              border: '1px solid rgba(255, 255, 255, 0.2)',
+              borderRadius: '12px',
+              cursor: 'pointer',
+              fontSize: '1rem',
+              fontWeight: '500',
+              transition: 'all 0.3s ease',
+              width: '100%',
+              maxWidth: '300px'
+            }}
+            onMouseOver={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.15)'}
+            onMouseOut={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.1)'}
+          >
+            ← Return to Main Hub
+          </button>
+        </div>
+        
+        <div style={{ 
+          marginTop: '50px',
+          paddingTop: '30px',
+          borderTop: '1px solid rgba(255, 255, 255, 0.1)'
+        }}>
+          <h3 style={{ 
+            color: '#94a3b8',
+            fontSize: '1.1rem',
+            marginBottom: '15px'
+          }}>
+            Planned Features for Private Rooms:
+          </h3>
+          <div style={{ 
+            display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            gap: '15px'
+          }}>
+            {['🔐 6-digit room codes', '👥 15 users per room', '🎨 Room themes', '📁 Room history', '👑 Room creators', '📤 Invite links'].map((feature, index) => (
+              <div key={index} style={{ 
+                background: 'rgba(139, 92, 246, 0.1)',
+                border: '1px solid rgba(139, 92, 246, 0.3)',
+                padding: '10px 20px',
+                borderRadius: '20px',
+                color: '#d8b4fe',
+                fontSize: '0.95rem'
+              }}>
+                {feature}
               </div>
             ))}
           </div>
         </div>
-      )}
+      </div>
+      
+      <div style={{ 
+        textAlign: 'center',
+        marginTop: '50px',
+        color: '#64748b',
+        fontSize: '0.9rem'
+      }}>
+        <p>Public Chat is fully functional! Try it out with friends. 👇</p>
+        <button
+          onClick={() => onJoinRoom('public', 'Public Chat')}
+          style={{ 
+            marginTop: '15px',
+            padding: '12px 30px',
+            background: 'rgba(34, 197, 94, 0.2)',
+            border: '1px solid rgba(34, 197, 94, 0.4)',
+            color: '#86efac',
+            borderRadius: '8px',
+            cursor: 'pointer',
+            fontSize: '1rem'
+          }}
+        >
+          Enter Public Chat Now
+        </button>
+      </div>
     </div>
   );
 }
+
 // ==================== CHAT ROOM ====================
 function ChatRoom({ socket, userData, currentRoom, onBack, theme, soundEnabled, onChangeTheme, onToggleSound }) {
   const [messages, setMessages] = useState([]);
