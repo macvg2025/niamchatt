@@ -1,16 +1,11 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
+import { io } from 'socket.io-client';
 
-// ==================== SOCKET SETUP ====================
-let socket;
-try {
-  const { io } = await import('socket.io-client');
-  socket = io('https://niamchat-backend.onrender.com');
-} catch (error) {
-  console.error('Failed to load socket.io:', error);
-}
+// Initialize socket connection
+const socket = io('https://niamchat-backend.onrender.com');
 
-// ==================== MAIN APP ====================
+// ==================== MAIN APP COMPONENT ====================
 function App() {
   const [page, setPage] = useState('landing');
   const [username, setUsername] = useState('');
@@ -20,9 +15,8 @@ function App() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [isFirstVisit, setIsFirstVisit] = useState(true);
-  const [adminList, setAdminList] = useState([]);
 
-  // Load user preferences
+  // Load user preferences on mount
   useEffect(() => {
     const savedUsername = localStorage.getItem('niamchat_username');
     const savedTheme = localStorage.getItem('niamchat_theme') || 'seaside';
@@ -41,78 +35,53 @@ function App() {
     document.body.className = `theme-${savedTheme}`;
   }, []);
 
-  // Set up socket listeners
-  useEffect(() => {
-    if (!socket) return;
-
-    socket.on('username_set', (data) => {
-      setUserData(data);
-      localStorage.setItem('niamchat_username', data.username);
-      localStorage.setItem('niamchat_visited', 'true');
-      
-      if (isFirstVisit) {
-        setPage('main-hub');
-      } else {
-        setPage('chat');
-        joinRoom('public', 'Public Chat');
-      }
-    });
-
-    socket.on('admin_granted', (data) => {
-      if (userData?.username === data.grantedTo) {
-        setUserData(prev => ({ ...prev, isAdmin: true, displayName: "⭐ Admin" }));
-      }
-    });
-
-    socket.on('admin_list', (data) => {
-      setAdminList(data.admins || []);
-    });
-
-    return () => {
-      socket.off('username_set');
-      socket.off('admin_granted');
-      socket.off('admin_list');
-    };
-  }, [isFirstVisit, userData]);
-
+  // Handle username submission
   const handleUsernameSubmit = (e) => {
     e.preventDefault();
-    if (username.trim() && socket) {
+    if (username.trim()) {
       socket.emit('set_username', username.trim());
+      socket.once('username_set', (data) => {
+        setUserData(data);
+        localStorage.setItem('niamchat_username', username.trim());
+        localStorage.setItem('niamchat_visited', 'true');
+        
+        if (isFirstVisit) {
+          setPage('main-hub');
+        } else {
+          setPage('chat');
+          joinRoom('public', 'Public Chat');
+        }
+      });
     }
   };
 
-  const joinRoom = (roomId, roomName, isPrivate = false) => {
-    if (socket) {
-      socket.emit('join_room', { roomId, roomName, isPrivate });
-      setCurrentRoom(roomId);
-    }
-  };
+  // Join a room
+  const joinRoom = useCallback((roomId, roomName, isPrivate = false) => {
+    socket.emit('join_room', { roomId, roomName, isPrivate });
+    setCurrentRoom(roomId);
+    setPage('chat');
+  }, []);
 
+  // Change theme
   const changeTheme = (newTheme) => {
     setTheme(newTheme);
     localStorage.setItem('niamchat_theme', newTheme);
     document.body.className = `theme-${newTheme}`;
   };
 
+  // Toggle sound
   const toggleSound = () => {
     const newValue = !soundEnabled;
     setSoundEnabled(newValue);
     localStorage.setItem('niamchat_sound', newValue.toString());
   };
 
+  // Toggle notifications
   const toggleNotifications = () => {
     const newValue = !notificationsEnabled;
     setNotificationsEnabled(newValue);
     localStorage.setItem('niamchat_notifications', newValue.toString());
   };
-
-  // Request admin list if owner
-  useEffect(() => {
-    if (userData?.isOwner && socket) {
-      socket.emit('get_admin_list');
-    }
-  }, [userData]);
 
   // Render current page
   switch (page) {
@@ -128,10 +97,7 @@ function App() {
     case 'main-hub':
       return (
         <MainHub
-          onSelectPublic={() => {
-            setPage('chat');
-            joinRoom('public', 'Public Chat');
-          }}
+          onSelectPublic={() => joinRoom('public', 'Public Chat')}
           onSelectPrivate={() => setPage('private-rooms')}
           theme={theme}
           soundEnabled={soundEnabled}
@@ -161,8 +127,6 @@ function App() {
           soundEnabled={soundEnabled}
           onChangeTheme={changeTheme}
           onToggleSound={toggleSound}
-          adminList={adminList}
-          setAdminList={setAdminList}
         />
       );
     default:
@@ -193,7 +157,7 @@ function LandingPage({ username, setUsername, onSubmit, theme }) {
       </form>
       <div className="mt-3 text-center">
         <small style={{ color: '#94a3b8' }}>
-          Choose any username. Owner: Niam the GOAT
+          Choose any username. Admin is only available to Niam (AKA the GOAT)."
         </small>
       </div>
     </div>
@@ -211,8 +175,37 @@ function MainHub({
   onToggleNotifications,
   onChangeTheme
 }) {
+  const [showThemePicker, setShowThemePicker] = useState(false);
+
   return (
     <div className="main-hub fade-in-up">
+      <div className="theme-selector">
+        <button 
+          className="theme-button"
+          onClick={() => setShowThemePicker(!showThemePicker)}
+          title="Change theme"
+        >
+          🎨
+        </button>
+        
+        {showThemePicker && (
+          <div className="theme-picker show">
+            {['seaside', 'cozy', 'neon', 'glacier', 'sunset', 'midnight', 'minty', 'cloudline', 'urban', 'crystal'].map((t) => (
+              <button
+                key={t}
+                className={`theme-option ${theme === t ? 'active' : ''}`}
+                data-theme={t}
+                onClick={() => {
+                  onChangeTheme(t);
+                  setShowThemePicker(false);
+                }}
+                title={t.charAt(0).toUpperCase() + t.slice(1)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
       <h1 className="hub-title">Welcome to NiamChat</h1>
       <p className="hub-subtitle">Choose where you want to chat</p>
       
@@ -231,7 +224,7 @@ function MainHub({
       </div>
 
       <div className="first-time-settings">
-        <h3 style={{ marginBottom: '20px', color: '#f8fafc' }}>First Time Setup</h3>
+        <h3 style={{ marginBottom: '20px', color: '#f8fafc' }}>Settings</h3>
         
         <div className="setting-option" style={{ marginBottom: '15px' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
@@ -258,16 +251,16 @@ function MainHub({
         </div>
 
         <div className="theme-selection">
-          <p style={{ marginBottom: '10px', color: '#f8fafc' }}>Choose a theme:</p>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <p style={{ marginBottom: '10px', color: '#f8fafc' }}>Current Theme: <strong>{theme}</strong></p>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
             {['seaside', 'cozy', 'neon', 'glacier', 'sunset', 'midnight', 'minty', 'cloudline', 'urban', 'crystal'].map((t) => (
               <button
                 key={t}
                 onClick={() => onChangeTheme(t)}
                 style={{
-                  width: '40px',
-                  height: '40px',
-                  borderRadius: '8px',
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '6px',
                   border: theme === t ? '2px solid white' : '1px solid #666',
                   background: getThemeColor(t),
                   cursor: 'pointer'
@@ -294,6 +287,7 @@ function PrivateRooms({ onBack, onJoinRoom, theme, socket }) {
   useEffect(() => {
     if (!socket) return;
 
+    // Set up socket listeners
     socket.on('my_rooms_list', (rooms) => {
       setMyRooms(rooms);
     });
@@ -302,20 +296,27 @@ function PrivateRooms({ onBack, onJoinRoom, theme, socket }) {
       setSuccess(`Room created! Code: ${data.roomCode}`);
       setRoomName('');
       setLoading(false);
-      socket.emit('get_my_rooms');
+      socket.emit('get_my_rooms'); // Refresh list
     });
 
     socket.on('room_error', (data) => {
-      setError(data.message || 'Error');
+      setError(data.message || 'Error creating/joining room');
       setLoading(false);
     });
 
+    socket.on('room_joined', () => {
+      setLoading(false);
+    });
+
+    // Request initial room list
     socket.emit('get_my_rooms');
 
+    // Cleanup
     return () => {
       socket.off('my_rooms_list');
       socket.off('private_room_created');
       socket.off('room_error');
+      socket.off('room_joined');
     };
   }, [socket]);
 
@@ -334,7 +335,7 @@ function PrivateRooms({ onBack, onJoinRoom, theme, socket }) {
   const joinWithCode = () => {
     const code = roomCode.trim().toUpperCase();
     if (code.length !== 6) {
-      setError('Room code must be 6 characters');
+      setError('Room code must be 6 characters (letters/numbers)');
       return;
     }
     
@@ -344,10 +345,17 @@ function PrivateRooms({ onBack, onJoinRoom, theme, socket }) {
     socket.emit('join_private_room', { roomCode: code });
   };
 
+  const joinRoomFromList = (code) => {
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    socket.emit('join_private_room', { roomCode: code });
+  };
+
   return (
     <div className="main-hub fade-in-up">
       <button onClick={onBack} style={{ marginBottom: '30px', padding: '10px 20px' }}>
-        ← Back
+        ← Back to Hub
       </button>
       
       <h1 className="hub-title">Private Chats</h1>
@@ -355,6 +363,7 @@ function PrivateRooms({ onBack, onJoinRoom, theme, socket }) {
       {loading && (
         <div style={{ 
           background: 'rgba(59, 130, 246, 0.1)', 
+          border: '1px solid rgba(59, 130, 246, 0.3)', 
           padding: '15px', 
           borderRadius: '10px',
           marginBottom: '20px',
@@ -368,7 +377,7 @@ function PrivateRooms({ onBack, onJoinRoom, theme, socket }) {
 
       {error && (
         <div style={{ 
-          background: 'rgba(239, 68, 68, 0.1)', 
+          background: 'rgba(239, 68, 68, 0.2)', 
           border: '1px solid #ef4444',
           color: '#fca5a5',
           padding: '15px',
@@ -381,18 +390,20 @@ function PrivateRooms({ onBack, onJoinRoom, theme, socket }) {
 
       {success && (
         <div style={{ 
-          background: 'rgba(34, 197, 94, 0.1)', 
+          background: 'rgba(34, 197, 94, 0.2)', 
           border: '1px solid #22c55e',
           color: '#86efac',
           padding: '15px',
           borderRadius: '10px',
-          marginBottom: '20px'
+          marginBottom: '20px',
+          textAlign: 'center'
         }}>
           ✅ {success}
         </div>
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '40px', marginBottom: '50px' }}>
+        {/* Create Room */}
         <div style={{ background: 'rgba(30, 41, 59, 0.7)', padding: '30px', borderRadius: '15px' }}>
           <h3 style={{ marginBottom: '20px', color: '#f8fafc' }}>Create New Room</h3>
           <input
@@ -422,6 +433,7 @@ function PrivateRooms({ onBack, onJoinRoom, theme, socket }) {
           </button>
         </div>
 
+        {/* Join Room */}
         <div style={{ background: 'rgba(30, 41, 59, 0.7)', padding: '30px', borderRadius: '15px' }}>
           <h3 style={{ marginBottom: '20px', color: '#f8fafc' }}>Join with Code</h3>
           <input
@@ -433,9 +445,9 @@ function PrivateRooms({ onBack, onJoinRoom, theme, socket }) {
               width: '100%', 
               padding: '15px', 
               marginBottom: '15px', 
-              borderRadius: '10px',
-              textTransform: 'uppercase',
-              letterSpacing: '2px'
+              borderRadius: '10px', 
+              textTransform: 'uppercase', 
+              letterSpacing: '2px' 
             }}
             maxLength={6}
             disabled={loading}
@@ -459,20 +471,28 @@ function PrivateRooms({ onBack, onJoinRoom, theme, socket }) {
         </div>
       </div>
 
+      {/* Your Rooms */}
       {myRooms.length > 0 && (
         <div>
           <h3 style={{ marginBottom: '20px', color: '#f8fafc' }}>Your Rooms</h3>
           <div style={{ display: 'grid', gap: '15px' }}>
             {myRooms.map((room) => (
-              <div key={room.id} style={{ background: 'rgba(30, 41, 59, 0.7)', padding: '20px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div key={room.id} style={{ 
+                background: 'rgba(30, 41, 59, 0.7)', 
+                padding: '20px', 
+                borderRadius: '12px', 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center' 
+              }}>
                 <div>
                   <div style={{ fontWeight: 'bold', color: '#f8fafc' }}>{room.name}</div>
-                  <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Code: {room.code}</div>
+                  <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
+                    Code: {room.code} • {room.userCount} users
+                  </div>
                 </div>
                 <button
-                  onClick={() => {
-                    socket.emit('join_private_room', { roomCode: room.code });
-                  }}
+                  onClick={() => joinRoomFromList(room.code)}
                   disabled={loading}
                   style={{ 
                     padding: '10px 20px', 
@@ -496,36 +516,27 @@ function PrivateRooms({ onBack, onJoinRoom, theme, socket }) {
 }
 
 // ==================== CHAT ROOM ====================
-function ChatRoom({ 
-  socket, 
-  userData, 
-  currentRoom, 
-  onBack, 
-  theme, 
-  soundEnabled, 
-  onChangeTheme, 
-  onToggleSound,
-  adminList,
-  setAdminList
-}) {
+function ChatRoom({ socket, userData, currentRoom, onBack, theme, soundEnabled, onChangeTheme, onToggleSound }) {
   const [messages, setMessages] = useState([]);
   const [onlineUsers, setOnlineUsers] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [roomInfo, setRoomInfo] = useState({ name: 'Public Chat', isPrivate: false });
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [typingUsers, setTypingUsers] = useState([]);
   const [notification, setNotification] = useState(null);
-  const [adminUsername, setAdminUsername] = useState('');
-  const [adminAction, setAdminAction] = useState('grant');
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
 
-  // Sound effect
-  const playMessageSound = () => {
+  // Sound effect for new messages
+  const playMessageSound = useCallback(() => {
     if (soundEnabled) {
       try {
-        const audio = new Audio('http://localhost:3001/sound/msg.mp3');
+        const audio = new Audio('https://macvg2025.github.io/niamchatt/msg.mp3');
+        audio.volume = 0.3;
         audio.play().catch(() => {
+          // Fallback to beep sound
           const audioContext = new (window.AudioContext || window.webkitAudioContext)();
           const oscillator = audioContext.createOscillator();
           const gainNode = audioContext.createGain();
@@ -540,19 +551,29 @@ function ChatRoom({
         console.log('Sound playback failed');
       }
     }
-  };
+  }, [soundEnabled]);
 
-  // Notifications
-  const showNotification = (title, message) => {
+  // Show notification
+  const showNotification = useCallback((title, message) => {
     setNotification({ title, message });
     setTimeout(() => setNotification(null), 3000);
     
-    if (Notification.permission === 'granted') {
+    // Browser notification if permitted
+    if (notificationsEnabled && Notification.permission === 'granted') {
       new Notification(title, { body: message });
     }
-  };
+  }, []);
 
-  // Socket listeners
+  // Typing indicator handlers
+  const handleTypingStart = useCallback(() => {
+    socket.emit('typing_start');
+  }, [socket]);
+
+  const handleTypingStop = useCallback(() => {
+    socket.emit('typing_stop');
+  }, [socket]);
+
+  // Socket event listeners
   useEffect(() => {
     if (!socket) return;
 
@@ -585,46 +606,31 @@ function ChatRoom({
 
     socket.on('user_left', ({ userId, username }) => {
       setOnlineUsers(prev => prev.filter(user => user.id !== userId));
+      setTypingUsers(prev => prev.filter(user => user.id !== userId));
       if (userId !== socket.id) {
         showNotification('User Left', `${username} left the room`);
       }
     });
 
-    socket.on('user_updated', (user) => {
-      setOnlineUsers(prev => prev.map(u => 
-        u.id === user.userId ? { ...u, ...user } : u
-      ));
-    });
-
-    // Admin listeners
-    socket.on('admin_granted_response', (data) => {
-      showNotification('Admin Granted', data.message);
-      setAdminUsername('');
-      socket.emit('get_admin_list');
-    });
-
-    socket.on('admin_revoked_response', (data) => {
-      showNotification('Admin Revoked', data.message);
-      setAdminUsername('');
-      socket.emit('get_admin_list');
-    });
-
-    socket.on('admin_error', (data) => {
+    socket.on('room_error', (data) => {
       showNotification('Error', data.message);
     });
 
-    socket.on('admin_list', (data) => {
-      setAdminList(data.admins || []);
+    socket.on('user_typing', ({ userId, username }) => {
+      setTypingUsers(prev => {
+        const exists = prev.find(u => u.id === userId);
+        if (!exists) return [...prev, { id: userId, username }];
+        return prev;
+      });
+    });
+
+    socket.on('user_stopped_typing', ({ userId }) => {
+      setTypingUsers(prev => prev.filter(u => u.id !== userId));
     });
 
     // Request notification permission
     if (Notification.permission === 'default') {
       Notification.requestPermission();
-    }
-
-    // Request admin list if owner
-    if (userData?.isOwner) {
-      socket.emit('get_admin_list');
     }
 
     return () => {
@@ -633,31 +639,47 @@ function ChatRoom({
       socket.off('message_updated');
       socket.off('user_joined');
       socket.off('user_left');
-      socket.off('user_updated');
-      socket.off('admin_granted_response');
-      socket.off('admin_revoked_response');
-      socket.off('admin_error');
-      socket.off('admin_list');
+      socket.off('room_error');
+      socket.off('user_typing');
+      socket.off('user_stopped_typing');
     };
-  }, [socket, soundEnabled, userData, setAdminList]);
+  }, [socket, soundEnabled, playMessageSound, showNotification]);
 
-  // Auto-scroll
+  // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Typing detection
+  useEffect(() => {
+    if (newMessage.length > 0) {
+      handleTypingStart();
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      typingTimeoutRef.current = setTimeout(() => {
+        handleTypingStop();
+      }, 3000);
+    } else {
+      handleTypingStop();
+    }
+
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, [newMessage, handleTypingStart, handleTypingStop]);
+
   // Send message
   const sendMessage = (e) => {
-    if (e) e.preventDefault();
+    if (e) {
+      e.preventDefault();
+    }
     
     const trimmedMessage = newMessage.trim();
     if (!trimmedMessage) {
       setNewMessage('');
-      return;
-    }
-
-    if (trimmedMessage.length > 400) {
-      showNotification('Error', 'Message is too long (max 400 characters)');
       return;
     }
 
@@ -666,6 +688,7 @@ function ChatRoom({
       imageUrl: null
     });
     setNewMessage('');
+    handleTypingStop();
   };
 
   // Handle image upload
@@ -673,16 +696,19 @@ function ChatRoom({
     const file = e.target.files[0];
     if (!file) return;
 
+    // Check file size (5MB max)
     if (file.size > 5 * 1024 * 1024) {
       showNotification('Error', 'Image size must be less than 5MB');
       return;
     }
 
+    // Check file type
     if (!file.type.startsWith('image/')) {
       showNotification('Error', 'Please upload an image file');
       return;
     }
 
+    // Create local URL and send it
     const reader = new FileReader();
     reader.onloadend = () => {
       const imageUrl = reader.result;
@@ -694,15 +720,21 @@ function ChatRoom({
     reader.readAsDataURL(file);
   };
 
-  // Admin actions
-  const handleAdminAction = () => {
-    if (!adminUsername.trim()) return;
-    
-    if (adminAction === 'grant') {
-      socket.emit('grant_admin', { targetUsername: adminUsername.trim() });
-    } else {
-      socket.emit('revoke_admin', { targetUsername: adminUsername.trim() });
-    }
+  // Like a message
+  const likeMessage = (messageId) => {
+    socket.emit('like_message', { messageId });
+  };
+
+  // Dislike a message
+  const dislikeMessage = (messageId) => {
+    socket.emit('dislike_message', { messageId });
+  };
+
+  // Copy message to clipboard
+  const copyMessage = (text) => {
+    navigator.clipboard.writeText(text).then(() => {
+      showNotification('Copied', 'Message copied to clipboard');
+    });
   };
 
   return (
@@ -726,6 +758,7 @@ function ChatRoom({
             className={`switch-button ${currentRoom === 'public' ? 'active' : ''}`}
             onClick={() => {
               socket.emit('join_room', { roomId: 'public', roomName: 'Public Chat' });
+              setCurrentRoom('public');
             }}
           >
             🌐 Public Chat
@@ -752,8 +785,8 @@ function ChatRoom({
                 <div className="user-details">
                   <div className="user-name">
                     {user.username}
-                    {user.isOwner && <span className="sender-badge owner">Owner</span>}
                     {user.isAdmin && <span className="sender-badge admin">Admin</span>}
+                    {user.isCreator && <span className="sender-badge creator">Creator</span>}
                   </div>
                   <div className="user-status-small">Online</div>
                 </div>
@@ -789,52 +822,31 @@ function ChatRoom({
           </div>
         </div>
 
-        {/* Owner Control Panel */}
-        {userData?.isOwner && (
-          <div className="owner-panel">
-            <h3>👑 Owner Controls</h3>
-            <div className="admin-controls">
-              <input
-                type="text"
-                placeholder="Enter username"
-                value={adminUsername}
-                onChange={(e) => setAdminUsername(e.target.value)}
-                className="admin-input"
-              />
-              <select 
-                value={adminAction}
-                onChange={(e) => setAdminAction(e.target.value)}
-                className="admin-select"
-              >
-                <option value="grant">Grant Admin</option>
-                <option value="revoke">Revoke Admin</option>
-              </select>
-              <button onClick={handleAdminAction} className="admin-button">
-                {adminAction === 'grant' ? 'Grant' : 'Revoke'}
-              </button>
-            </div>
-            {adminList.length > 0 && (
-              <div className="admin-list">
-                <small>Current Admins: {adminList.join(', ')}</small>
-              </div>
-            )}
-          </div>
-        )}
-
         <div className="messages-container">
           {messages.map((message) => (
             <Message
               key={message.id}
               message={message}
               isOwn={message.userId === socket.id}
-              onLike={() => socket.emit('like_message', { messageId: message.id })}
-              onDislike={() => socket.emit('dislike_message', { messageId: message.id })}
-              onCopy={() => {
-                navigator.clipboard.writeText(message.content);
-                showNotification('Copied', 'Message copied to clipboard');
-              }}
+              onLike={() => likeMessage(message.id)}
+              onDislike={() => dislikeMessage(message.id)}
+              onCopy={() => copyMessage(message.content)}
             />
           ))}
+          
+          {/* Typing Indicator */}
+          {typingUsers.length > 0 && (
+            <div className="typing-indicator">
+              <div className="typing-dots">
+                <span>●</span><span>●</span><span>●</span>
+              </div>
+              <span>
+                {typingUsers.map(u => u.username).join(', ')}
+                {typingUsers.length === 1 ? ' is typing...' : ' are typing...'}
+              </span>
+            </div>
+          )}
+          
           <div ref={messagesEndRef} />
         </div>
 
@@ -844,7 +856,9 @@ function ChatRoom({
               className="message-input"
               placeholder="Type your message here... (Press Enter to send, Shift+Enter for new line)"
               value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
+              onChange={(e) => {
+                setNewMessage(e.target.value);
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -972,7 +986,7 @@ function Message({ message, isOwn, onLike, onDislike, onCopy }) {
 
   return (
     <div
-      className={`message ${isOwn ? 'sent' : 'received'} ${message.isOwner ? 'owner' : ''} ${message.isAdmin ? 'admin' : ''} ${message.isCreator ? 'creator' : ''}`}
+      className={`message ${isOwn ? 'sent' : 'received'} ${message.isAdmin ? 'admin' : ''} ${message.isCreator ? 'creator' : ''}`}
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => setShowActions(false)}
     >
@@ -983,7 +997,6 @@ function Message({ message, isOwn, onLike, onDislike, onCopy }) {
           </div>
           <div className="sender-name">
             {message.username}
-            {message.isOwner && <span className="sender-badge owner">Owner</span>}
             {message.isAdmin && <span className="sender-badge admin">Admin</span>}
             {message.isCreator && <span className="sender-badge creator">Creator</span>}
           </div>
@@ -1032,7 +1045,7 @@ function Message({ message, isOwn, onLike, onDislike, onCopy }) {
   );
 }
 
-// Helper function
+// Helper function for theme colors
 function getThemeColor(theme) {
   const colors = {
     seaside: 'linear-gradient(135deg, #0c4a6e 0%, #0ea5e9 100%)',
