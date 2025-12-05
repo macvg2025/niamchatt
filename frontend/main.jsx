@@ -1,34 +1,4 @@
-// Detect if we're in an iframe or small window
-const detectViewMode = () => {
-  const width = window.innerWidth;
-  
-  // If we're in an iframe
-  if (window.self !== window.top) {
-    document.body.classList.add('iframe-mode');
-    
-    // Check width for sidebar mode
-    if (width <= 768) {
-      document.body.classList.add('sidebar-mode');
-      document.body.classList.remove('mobile-mode');
-    } else {
-      document.body.classList.remove('sidebar-mode');
-    }
-  }
-  
-  // Regular mobile detection
-  if (width <= 768 && window.self === window.top) {
-    document.body.classList.add('mobile-mode');
-    document.body.classList.remove('sidebar-mode');
-  } else if (window.self === window.top) {
-    document.body.classList.remove('mobile-mode', 'sidebar-mode');
-  }
-};
-
-// Run on load and resize
-window.addEventListener('load', detectViewMode);
-window.addEventListener('resize', detectViewMode);
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createRoot } from 'react-dom/client';
 import { io } from 'socket.io-client';
 
@@ -53,17 +23,7 @@ function App() {
     const savedSound = localStorage.getItem('niamchat_sound') !== 'false';
     const savedNotifications = localStorage.getItem('niamchat_notifications') !== 'false';
     const visited = localStorage.getItem('niamchat_visited');
-// Add to your existing useEffect or at top level:
-useEffect(() => {
-  const handleMessage = (event) => {
-    if (event.data.type === 'SET_MODE') {
-      document.body.classList.add(event.data.mode + '-mode');
-    }
-  };
-  
-  window.addEventListener('message', handleMessage);
-  return () => window.removeEventListener('message', handleMessage);
-}, []);
+
     if (savedUsername) {
       setUsername(savedUsername);
       setIsFirstVisit(!visited);
@@ -96,10 +56,11 @@ useEffect(() => {
   };
 
   // Join a room
-  const joinRoom = (roomId, roomName, isPrivate = false) => {
+  const joinRoom = useCallback((roomId, roomName, isPrivate = false) => {
     socket.emit('join_room', { roomId, roomName, isPrivate });
     setCurrentRoom(roomId);
-  };
+    setPage('chat');
+  }, []);
 
   // Change theme
   const changeTheme = (newTheme) => {
@@ -136,10 +97,7 @@ useEffect(() => {
     case 'main-hub':
       return (
         <MainHub
-          onSelectPublic={() => {
-            setPage('chat');
-            joinRoom('public', 'Public Chat');
-          }}
+          onSelectPublic={() => joinRoom('public', 'Public Chat')}
           onSelectPrivate={() => setPage('private-rooms')}
           theme={theme}
           soundEnabled={soundEnabled}
@@ -155,7 +113,7 @@ useEffect(() => {
           onBack={() => setPage('main-hub')}
           onJoinRoom={joinRoom}
           theme={theme}
-          socket={socket} 
+          socket={socket}
         />
       );
     case 'chat':
@@ -199,7 +157,7 @@ function LandingPage({ username, setUsername, onSubmit, theme }) {
       </form>
       <div className="mt-3 text-center">
         <small style={{ color: '#94a3b8' }}>
-          Choose any username. Admin access requires special username.
+          Choose any username. Admin: Use "CharlieMartin12344"
         </small>
       </div>
     </div>
@@ -217,10 +175,37 @@ function MainHub({
   onToggleNotifications,
   onChangeTheme
 }) {
-  const [showSettings, setShowSettings] = useState(false);
+  const [showThemePicker, setShowThemePicker] = useState(false);
 
   return (
     <div className="main-hub fade-in-up">
+      <div className="theme-selector">
+        <button 
+          className="theme-button"
+          onClick={() => setShowThemePicker(!showThemePicker)}
+          title="Change theme"
+        >
+          🎨
+        </button>
+        
+        {showThemePicker && (
+          <div className="theme-picker show">
+            {['seaside', 'cozy', 'neon', 'glacier', 'sunset', 'midnight', 'minty', 'cloudline', 'urban', 'crystal'].map((t) => (
+              <button
+                key={t}
+                className={`theme-option ${theme === t ? 'active' : ''}`}
+                data-theme={t}
+                onClick={() => {
+                  onChangeTheme(t);
+                  setShowThemePicker(false);
+                }}
+                title={t.charAt(0).toUpperCase() + t.slice(1)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
       <h1 className="hub-title">Welcome to NiamChat</h1>
       <p className="hub-subtitle">Choose where you want to chat</p>
       
@@ -231,15 +216,15 @@ function MainHub({
           <span className="button-description">Chat with everyone online</span>
         </button>
         
-       <button className="hub-button private" onClick={onSelectPrivate}>
-  <span className="button-icon">🔒</span>
-  <span>Private Chats</span>
-  <span className="button-description">Coming soon - check it out!</span>
-</button>
+        <button className="hub-button private" onClick={onSelectPrivate}>
+          <span className="button-icon">🔒</span>
+          <span>Private Chats</span>
+          <span className="button-description">Create or join private rooms</span>
+        </button>
       </div>
 
       <div className="first-time-settings">
-        <h3 style={{ marginBottom: '20px', color: '#f8fafc' }}>First Time Setup</h3>
+        <h3 style={{ marginBottom: '20px', color: '#f8fafc' }}>Settings</h3>
         
         <div className="setting-option" style={{ marginBottom: '15px' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
@@ -266,16 +251,16 @@ function MainHub({
         </div>
 
         <div className="theme-selection">
-          <p style={{ marginBottom: '10px', color: '#f8fafc' }}>Choose a theme:</p>
-          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <p style={{ marginBottom: '10px', color: '#f8fafc' }}>Current Theme: <strong>{theme}</strong></p>
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
             {['seaside', 'cozy', 'neon', 'glacier', 'sunset', 'midnight', 'minty', 'cloudline', 'urban', 'crystal'].map((t) => (
               <button
                 key={t}
                 onClick={() => onChangeTheme(t)}
                 style={{
-                  width: '40px',
-                  height: '40px',
-                  borderRadius: '8px',
+                  width: '30px',
+                  height: '30px',
+                  borderRadius: '6px',
                   border: theme === t ? '2px solid white' : '1px solid #666',
                   background: getThemeColor(t),
                   cursor: 'pointer'
@@ -286,232 +271,246 @@ function MainHub({
           </div>
         </div>
       </div>
-
-      {showSettings && (
-        <div className="modal-overlay" onClick={() => setShowSettings(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2 className="modal-title">Settings</h2>
-            </div>
-            {/* Settings content would go here */}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-// Helper function for theme colors
-function getThemeColor(theme) {
-  const colors = {
-    seaside: 'linear-gradient(135deg, #0c4a6e 0%, #0ea5e9 100%)',
-    cozy: 'linear-gradient(135deg, #7c2d12 0%, #c2410c 100%)',
-    neon: 'linear-gradient(135deg, #1e1b4b 0%, #8b5cf6 100%)',
-    glacier: 'linear-gradient(135deg, #164e63 0%, #06b6d4 100%)',
-    sunset: 'linear-gradient(135deg, #7c2d12 0%, #dc2626 100%)',
-    midnight: 'linear-gradient(135deg, #1e1b4b 0%, #6366f1 100%)',
-    minty: 'linear-gradient(135deg, #064e3b 0%, #10b981 100%)',
-    cloudline: 'linear-gradient(135deg, #374151 0%, #9ca3af 100%)',
-    urban: 'linear-gradient(135deg, #6d28d9 0%, #a78bfa 100%)',
-    crystal: 'linear-gradient(135deg, #0d9488 0%, #2dd4bf 100%)'
-  };
-  return colors[theme] || colors.seaside;
-}
-
 // ==================== PRIVATE ROOMS ====================
 function PrivateRooms({ onBack, onJoinRoom, theme, socket }) {
+  const [roomName, setRoomName] = useState('');
+  const [roomCode, setRoomCode] = useState('');
+  const [myRooms, setMyRooms] = useState([]);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    // Set up socket listeners
+    socket.on('my_rooms_list', (rooms) => {
+      setMyRooms(rooms);
+    });
+
+    socket.on('private_room_created', (data) => {
+      setSuccess(`Room created! Code: ${data.roomCode}`);
+      setRoomName('');
+      setLoading(false);
+      socket.emit('get_my_rooms'); // Refresh list
+    });
+
+    socket.on('room_error', (data) => {
+      setError(data.message || 'Error creating/joining room');
+      setLoading(false);
+    });
+
+    socket.on('room_joined', () => {
+      setLoading(false);
+    });
+
+    // Request initial room list
+    socket.emit('get_my_rooms');
+
+    // Cleanup
+    return () => {
+      socket.off('my_rooms_list');
+      socket.off('private_room_created');
+      socket.off('room_error');
+      socket.off('room_joined');
+    };
+  }, [socket]);
+
+  const createRoom = () => {
+    if (!roomName.trim()) {
+      setError('Please enter a room name');
+      return;
+    }
+    
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    socket.emit('create_private_room', { roomName: roomName.trim() });
+  };
+
+  const joinWithCode = () => {
+    const code = roomCode.trim().toUpperCase();
+    if (code.length !== 6) {
+      setError('Room code must be 6 characters (letters/numbers)');
+      return;
+    }
+    
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    socket.emit('join_private_room', { roomCode: code });
+  };
+
+  const joinRoomFromList = (code) => {
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    socket.emit('join_private_room', { roomCode: code });
+  };
+
   return (
     <div className="main-hub fade-in-up">
-      <button 
-        onClick={onBack}
-        style={{ 
-          marginBottom: '40px', 
-          padding: '12px 24px',
-          background: 'rgba(30, 41, 59, 0.7)',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          color: '#f8fafc',
-          borderRadius: '10px',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          fontSize: '1rem'
-        }}
-      >
+      <button onClick={onBack} style={{ marginBottom: '30px', padding: '10px 20px' }}>
         ← Back to Hub
       </button>
       
-      <div style={{ 
-        textAlign: 'center',
-        marginBottom: '40px'
-      }}>
-        <h1 className="hub-title" style={{ fontSize: '3rem', marginBottom: '15px' }}>
-          🔒 Private Chats
-        </h1>
-        <p style={{ 
-          color: '#94a3b8', 
-          fontSize: '1.3rem',
-          maxWidth: '600px',
-          margin: '0 auto',
-          lineHeight: '1.6'
+      <h1 className="hub-title">Private Chats</h1>
+      
+      {loading && (
+        <div style={{ 
+          background: 'rgba(59, 130, 246, 0.1)', 
+          border: '1px solid rgba(59, 130, 246, 0.3)', 
+          padding: '15px', 
+          borderRadius: '10px',
+          marginBottom: '20px',
+          textAlign: 'center',
+          color: '#60a5fa'
         }}>
-          Create private rooms with shareable codes
-        </p>
+          <div className="loading-spinner" style={{ display: 'inline-block', marginRight: '10px' }}></div>
+          Processing...
+        </div>
+      )}
+
+      {error && (
+        <div style={{ 
+          background: 'rgba(239, 68, 68, 0.2)', 
+          border: '1px solid #ef4444',
+          color: '#fca5a5',
+          padding: '15px',
+          borderRadius: '10px',
+          marginBottom: '20px'
+        }}>
+          ⚠️ {error}
+        </div>
+      )}
+
+      {success && (
+        <div style={{ 
+          background: 'rgba(34, 197, 94, 0.2)', 
+          border: '1px solid #22c55e',
+          color: '#86efac',
+          padding: '15px',
+          borderRadius: '10px',
+          marginBottom: '20px',
+          textAlign: 'center'
+        }}>
+          ✅ {success}
+        </div>
+      )}
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '40px', marginBottom: '50px' }}>
+        {/* Create Room */}
+        <div style={{ background: 'rgba(30, 41, 59, 0.7)', padding: '30px', borderRadius: '15px' }}>
+          <h3 style={{ marginBottom: '20px', color: '#f8fafc' }}>Create New Room</h3>
+          <input
+            type="text"
+            placeholder="Room name"
+            value={roomName}
+            onChange={(e) => setRoomName(e.target.value)}
+            style={{ width: '100%', padding: '15px', marginBottom: '15px', borderRadius: '10px' }}
+            maxLength={30}
+            disabled={loading}
+          />
+          <button
+            onClick={createRoom}
+            disabled={loading}
+            style={{ 
+              width: '100%', 
+              padding: '15px', 
+              background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)', 
+              color: 'white', 
+              border: 'none', 
+              borderRadius: '10px', 
+              cursor: 'pointer',
+              opacity: loading ? 0.7 : 1
+            }}
+          >
+            {loading ? 'Creating...' : 'Create Room'}
+          </button>
+        </div>
+
+        {/* Join Room */}
+        <div style={{ background: 'rgba(30, 41, 59, 0.7)', padding: '30px', borderRadius: '15px' }}>
+          <h3 style={{ marginBottom: '20px', color: '#f8fafc' }}>Join with Code</h3>
+          <input
+            type="text"
+            placeholder="Enter 6-digit code"
+            value={roomCode}
+            onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+            style={{ 
+              width: '100%', 
+              padding: '15px', 
+              marginBottom: '15px', 
+              borderRadius: '10px', 
+              textTransform: 'uppercase', 
+              letterSpacing: '2px' 
+            }}
+            maxLength={6}
+            disabled={loading}
+          />
+          <button
+            onClick={joinWithCode}
+            disabled={loading}
+            style={{ 
+              width: '100%', 
+              padding: '15px', 
+              background: 'linear-gradient(135deg, #10b981 0%, #34d399 100%)', 
+              color: 'white', 
+              border: 'none', 
+              borderRadius: '10px', 
+              cursor: 'pointer',
+              opacity: loading ? 0.7 : 1
+            }}
+          >
+            {loading ? 'Joining...' : 'Join Room'}
+          </button>
+        </div>
       </div>
 
-      {/* Coming Soon Card */}
-      <div style={{ 
-        background: 'rgba(30, 41, 59, 0.9)',
-        border: '2px solid rgba(139, 92, 246, 0.3)',
-        borderRadius: '20px',
-        padding: '60px 40px',
-        textAlign: 'center',
-        maxWidth: '700px',
-        margin: '0 auto',
-        boxShadow: '0 20px 40px rgba(0, 0, 0, 0.3)',
-        animation: 'fadeInUp 0.6s ease-out'
-      }}>
-        <div style={{ 
-          fontSize: '5rem',
-          marginBottom: '30px',
-          animation: 'pulse 2s infinite'
-        }}>
-          🚧
-        </div>
-        
-        <h2 style={{ 
-          fontSize: '2.5rem',
-          color: '#f8fafc',
-          marginBottom: '20px',
-          background: 'linear-gradient(135deg, #a78bfa 0%, #f0abfc 100%)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          backgroundClip: 'text'
-        }}>
-          Coming Soon!
-        </h2>
-        
-        <p style={{ 
-          color: '#cbd5e1',
-          fontSize: '1.2rem',
-          lineHeight: '1.7',
-          marginBottom: '30px',
-          maxWidth: '500px',
-          marginLeft: 'auto',
-          marginRight: 'auto'
-        }}>
-          The private rooms feature is currently in development. 
-          You'll soon be able to create private chat rooms with unique codes 
-          to share with friends!
-        </p>
-        
-        <div style={{ 
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '20px',
-          alignItems: 'center',
-          marginTop: '40px'
-        }}>
-          <button
-            onClick={() => onJoinRoom('public', 'Public Chat')}
-            style={{ 
-              padding: '18px 50px',
-              background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '12px',
-              cursor: 'pointer',
-              fontSize: '1.2rem',
-              fontWeight: '600',
-              transition: 'all 0.3s ease',
-              width: '100%',
-              maxWidth: '300px'
-            }}
-            onMouseOver={(e) => e.target.style.transform = 'translateY(-2px)'}
-            onMouseOut={(e) => e.target.style.transform = 'translateY(0)'}
-          >
-            🌐 Go to Public Chat
-          </button>
-          
-          <button
-            onClick={onBack}
-            style={{ 
-              padding: '15px 40px',
-              background: 'rgba(255, 255, 255, 0.1)',
-              color: '#cbd5e1',
-              border: '1px solid rgba(255, 255, 255, 0.2)',
-              borderRadius: '12px',
-              cursor: 'pointer',
-              fontSize: '1rem',
-              fontWeight: '500',
-              transition: 'all 0.3s ease',
-              width: '100%',
-              maxWidth: '300px'
-            }}
-            onMouseOver={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.15)'}
-            onMouseOut={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.1)'}
-          >
-            ← Return to Main Hub
-          </button>
-        </div>
-        
-        <div style={{ 
-          marginTop: '50px',
-          paddingTop: '30px',
-          borderTop: '1px solid rgba(255, 255, 255, 0.1)'
-        }}>
-          <h3 style={{ 
-            color: '#94a3b8',
-            fontSize: '1.1rem',
-            marginBottom: '15px'
-          }}>
-            Planned Features for Private Rooms:
-          </h3>
-          <div style={{ 
-            display: 'flex',
-            flexWrap: 'wrap',
-            justifyContent: 'center',
-            gap: '15px'
-          }}>
-            {['🔐 6-digit room codes', '👥 15 users per room', '🎨 Room themes', '📁 Room history', '👑 Room creators', '📤 Invite links'].map((feature, index) => (
-              <div key={index} style={{ 
-                background: 'rgba(139, 92, 246, 0.1)',
-                border: '1px solid rgba(139, 92, 246, 0.3)',
-                padding: '10px 20px',
-                borderRadius: '20px',
-                color: '#d8b4fe',
-                fontSize: '0.95rem'
+      {/* Your Rooms */}
+      {myRooms.length > 0 && (
+        <div>
+          <h3 style={{ marginBottom: '20px', color: '#f8fafc' }}>Your Rooms</h3>
+          <div style={{ display: 'grid', gap: '15px' }}>
+            {myRooms.map((room) => (
+              <div key={room.id} style={{ 
+                background: 'rgba(30, 41, 59, 0.7)', 
+                padding: '20px', 
+                borderRadius: '12px', 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center' 
               }}>
-                {feature}
+                <div>
+                  <div style={{ fontWeight: 'bold', color: '#f8fafc' }}>{room.name}</div>
+                  <div style={{ color: '#94a3b8', fontSize: '0.9rem' }}>
+                    Code: {room.code} • {room.userCount} users
+                  </div>
+                </div>
+                <button
+                  onClick={() => joinRoomFromList(room.code)}
+                  disabled={loading}
+                  style={{ 
+                    padding: '10px 20px', 
+                    background: 'rgba(59, 130, 246, 0.2)', 
+                    border: '1px solid rgba(96, 165, 250, 0.3)', 
+                    color: '#60a5fa', 
+                    borderRadius: '8px', 
+                    cursor: 'pointer',
+                    opacity: loading ? 0.7 : 1
+                  }}
+                >
+                  Join
+                </button>
               </div>
             ))}
           </div>
         </div>
-      </div>
-      
-      <div style={{ 
-        textAlign: 'center',
-        marginTop: '50px',
-        color: '#64748b',
-        fontSize: '0.9rem'
-      }}>
-        <p>Public Chat is fully functional! Try it out with friends. 👇</p>
-        <button
-          onClick={() => onJoinRoom('public', 'Public Chat')}
-          style={{ 
-            marginTop: '15px',
-            padding: '12px 30px',
-            background: 'rgba(34, 197, 94, 0.2)',
-            border: '1px solid rgba(34, 197, 94, 0.4)',
-            color: '#86efac',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            fontSize: '1rem'
-          }}
-        >
-          Enter Public Chat Now
-        </button>
-      </div>
+      )}
     </div>
   );
 }
@@ -524,15 +523,18 @@ function ChatRoom({ socket, userData, currentRoom, onBack, theme, soundEnabled, 
   const [roomInfo, setRoomInfo] = useState({ name: 'Public Chat', isPrivate: false });
   const [showThemePicker, setShowThemePicker] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [typingUsers, setTypingUsers] = useState([]);
   const [notification, setNotification] = useState(null);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  const typingTimeoutRef = useRef(null);
 
   // Sound effect for new messages
-  const playMessageSound = () => {
+  const playMessageSound = useCallback(() => {
     if (soundEnabled) {
       try {
-        const audio = new Audio('http://localhost:3001/sound/msg.mp3');
+        const audio = new Audio('https://niamchat-backend.onrender.com/sound/msg.mp3');
+        audio.volume = 0.3;
         audio.play().catch(() => {
           // Fallback to beep sound
           const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -549,18 +551,27 @@ function ChatRoom({ socket, userData, currentRoom, onBack, theme, soundEnabled, 
         console.log('Sound playback failed');
       }
     }
-  };
+  }, [soundEnabled]);
 
   // Show notification
-  const showNotification = (title, message) => {
+  const showNotification = useCallback((title, message) => {
     setNotification({ title, message });
     setTimeout(() => setNotification(null), 3000);
     
     // Browser notification if permitted
-    if (Notification.permission === 'granted') {
+    if (notificationsEnabled && Notification.permission === 'granted') {
       new Notification(title, { body: message });
     }
-  };
+  }, []);
+
+  // Typing indicator handlers
+  const handleTypingStart = useCallback(() => {
+    socket.emit('typing_start');
+  }, [socket]);
+
+  const handleTypingStop = useCallback(() => {
+    socket.emit('typing_stop');
+  }, [socket]);
 
   // Socket event listeners
   useEffect(() => {
@@ -595,9 +606,26 @@ function ChatRoom({ socket, userData, currentRoom, onBack, theme, soundEnabled, 
 
     socket.on('user_left', ({ userId, username }) => {
       setOnlineUsers(prev => prev.filter(user => user.id !== userId));
+      setTypingUsers(prev => prev.filter(user => user.id !== userId));
       if (userId !== socket.id) {
         showNotification('User Left', `${username} left the room`);
       }
+    });
+
+    socket.on('room_error', (data) => {
+      showNotification('Error', data.message);
+    });
+
+    socket.on('user_typing', ({ userId, username }) => {
+      setTypingUsers(prev => {
+        const exists = prev.find(u => u.id === userId);
+        if (!exists) return [...prev, { id: userId, username }];
+        return prev;
+      });
+    });
+
+    socket.on('user_stopped_typing', ({ userId }) => {
+      setTypingUsers(prev => prev.filter(u => u.id !== userId));
     });
 
     // Request notification permission
@@ -611,30 +639,47 @@ function ChatRoom({ socket, userData, currentRoom, onBack, theme, soundEnabled, 
       socket.off('message_updated');
       socket.off('user_joined');
       socket.off('user_left');
+      socket.off('room_error');
+      socket.off('user_typing');
+      socket.off('user_stopped_typing');
     };
-  }, [socket, soundEnabled]);
+  }, [socket, soundEnabled, playMessageSound, showNotification]);
 
   // Auto-scroll to bottom
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Send message
+  // Typing detection
+  useEffect(() => {
+    if (newMessage.length > 0) {
+      handleTypingStart();
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      typingTimeoutRef.current = setTimeout(() => {
+        handleTypingStop();
+      }, 3000);
+    } else {
+      handleTypingStop();
+    }
+
+    return () => {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+    };
+  }, [newMessage, handleTypingStart, handleTypingStop]);
+
   // Send message
   const sendMessage = (e) => {
     if (e) {
-      e.preventDefault(); // Prevent form submission
+      e.preventDefault();
     }
     
     const trimmedMessage = newMessage.trim();
     if (!trimmedMessage) {
-      setNewMessage(''); // Clear even if empty
-      return;
-    }
-
-    // Check if message is too long (should be handled by maxLength but just in case)
-    if (trimmedMessage.length > 400) {
-      showNotification('Error', 'Message is too long (max 400 characters)');
+      setNewMessage('');
       return;
     }
 
@@ -643,6 +688,7 @@ function ChatRoom({ socket, userData, currentRoom, onBack, theme, soundEnabled, 
       imageUrl: null
     });
     setNewMessage('');
+    handleTypingStop();
   };
 
   // Handle image upload
@@ -662,8 +708,7 @@ function ChatRoom({ socket, userData, currentRoom, onBack, theme, soundEnabled, 
       return;
     }
 
-    // In a real app, we would upload to a server
-    // For now, we'll create a local URL and send it
+    // Create local URL and send it
     const reader = new FileReader();
     reader.onloadend = () => {
       const imageUrl = reader.result;
@@ -741,6 +786,7 @@ function ChatRoom({ socket, userData, currentRoom, onBack, theme, soundEnabled, 
                   <div className="user-name">
                     {user.username}
                     {user.isAdmin && <span className="sender-badge admin">Admin</span>}
+                    {user.isCreator && <span className="sender-badge creator">Creator</span>}
                   </div>
                   <div className="user-status-small">Online</div>
                 </div>
@@ -787,26 +833,41 @@ function ChatRoom({ socket, userData, currentRoom, onBack, theme, soundEnabled, 
               onCopy={() => copyMessage(message.content)}
             />
           ))}
+          
+          {/* Typing Indicator */}
+          {typingUsers.length > 0 && (
+            <div className="typing-indicator">
+              <div className="typing-dots">
+                <span>●</span><span>●</span><span>●</span>
+              </div>
+              <span>
+                {typingUsers.map(u => u.username).join(', ')}
+                {typingUsers.length === 1 ? ' is typing...' : ' are typing...'}
+              </span>
+            </div>
+          )}
+          
           <div ref={messagesEndRef} />
         </div>
 
         <form className="message-input-area" onSubmit={sendMessage}>
           <div className="input-wrapper">
-           <textarea
-  className="message-input"
-  placeholder="Type your message here... (Press Enter to send, Shift+Enter for new line)"
-  value={newMessage}
-  onChange={(e) => setNewMessage(e.target.value)}
-  onKeyDown={(e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault(); // Prevent new line
-      sendMessage(e); // Send the message
-    }
-    // Shift+Enter will create new line (default behavior)
-  }}
-  maxLength={400}
-  rows="3"
-/>
+            <textarea
+              className="message-input"
+              placeholder="Type your message here... (Press Enter to send, Shift+Enter for new line)"
+              value={newMessage}
+              onChange={(e) => {
+                setNewMessage(e.target.value);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  sendMessage(e);
+                }
+              }}
+              maxLength={400}
+              rows="3"
+            />
             <div className={`char-count ${newMessage.length > 350 ? 'warning' : ''} ${newMessage.length >= 400 ? 'error' : ''}`}>
               {newMessage.length}/400
             </div>
@@ -982,6 +1043,23 @@ function Message({ message, isOwn, onLike, onDislike, onCopy }) {
       </div>
     </div>
   );
+}
+
+// Helper function for theme colors
+function getThemeColor(theme) {
+  const colors = {
+    seaside: 'linear-gradient(135deg, #0c4a6e 0%, #0ea5e9 100%)',
+    cozy: 'linear-gradient(135deg, #7c2d12 0%, #c2410c 100%)',
+    neon: 'linear-gradient(135deg, #1e1b4b 0%, #8b5cf6 100%)',
+    glacier: 'linear-gradient(135deg, #164e63 0%, #06b6d4 100%)',
+    sunset: 'linear-gradient(135deg, #7c2d12 0%, #dc2626 100%)',
+    midnight: 'linear-gradient(135deg, #1e1b4b 0%, #6366f1 100%)',
+    minty: 'linear-gradient(135deg, #064e3b 0%, #10b981 100%)',
+    cloudline: 'linear-gradient(135deg, #374151 0%, #9ca3af 100%)',
+    urban: 'linear-gradient(135deg, #6d28d9 0%, #a78bfa 100%)',
+    crystal: 'linear-gradient(135deg, #0d9488 0%, #2dd4bf 100%)'
+  };
+  return colors[theme] || colors.seaside;
 }
 
 // ==================== RENDER APP ====================
