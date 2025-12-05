@@ -157,7 +157,7 @@ function LandingPage({ username, setUsername, onSubmit, theme }) {
       </form>
       <div className="mt-3 text-center">
         <small style={{ color: '#94a3b8' }}>
-          Choose any username. Admin: Use "CharlieMartin12344"
+          Choose any username. Admin is only available to Niam (AKA the GOAT)."
         </small>
       </div>
     </div>
