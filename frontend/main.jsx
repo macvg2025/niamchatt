@@ -258,7 +258,7 @@ function MainHub({
         </div>
 
         <div className="theme-selection">
-          <p style={{ marginBottom: '10px', color: '#f8fafc' }}>Choose a theme:</</p>
+          <p style={{ marginBottom: '10px', color: '#f8fafc' }}>Choose a theme:</p>
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             {['seaside', 'cozy', 'neon', 'glacier', 'sunset', 'midnight', 'minty', 'cloudline', 'urban', 'crystal'].map((t) => (
               <button
