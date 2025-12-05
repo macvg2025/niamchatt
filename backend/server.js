@@ -16,69 +16,58 @@ const io = socketIo(server, {
 
 app.use(cors());
 app.use(express.json());
+app.use('/sound', express.static('../')); // For msg.mp3
 
-// Store data in memory
+// ========== OWNER & ADMIN SYSTEM ==========
+const OWNER_USERNAME = "AccessHV241";
+
+// Read admins from environment variable (persistent)
+// In Render dashboard: Add ADMINS="User1,User2,User3"
+const HARDCODED_ADMINS = (process.env.ADMINS || "").split(",").filter(name => name.trim());
+const adminUsers = new Set([OWNER_USERNAME, ...HARDCODED_ADMINS]);
+
+console.log('Initial admin users:', Array.from(adminUsers));
+
+// Store active data in memory
 const users = new Map(); // socket.id -> user data
 const rooms = new Map(); // roomId -> room data
-const privateRooms = new Map(); // roomCode -> room data
+const privateRooms = new Map(); // roomCode -> private room data
 
-// Constants
-const ADMIN_USERNAME = "123HIfg^";
-const MAX_ROOM_USERS = 15;
-const MAX_MESSAGE_LENGTH = 400;
-const PRIVATE_ROOM_CODE_LENGTH = 6;
-
-// Utility functions
+// Generate 6-character room code
 function generateRoomCode() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let code = '';
-  for (let i = 0; i < PRIVATE_ROOM_CODE_LENGTH; i++) {
+  for (let i = 0; i < 6; i++) {
     code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return code;
 }
 
-function sanitizeMessage(content) {
-  return content.substring(0, MAX_MESSAGE_LENGTH).trim();
-}
-
-function formatUserForDisplay(username) {
-  return username === ADMIN_USERNAME ? "Admin - Niam" : username;
-}
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    users: users.size,
-    rooms: rooms.size,
-    privateRooms: privateRooms.size,
-    version: '2.0.0'
-  });
-});
-
 // Socket.io connection handling
 io.on('connection', (socket) => {
-  console.log('New connection:', socket.id);
+  console.log('New user connected:', socket.id);
 
   // ========== USER MANAGEMENT ==========
   socket.on('set_username', (username) => {
-    const displayName = formatUserForDisplay(username);
-    const isAdmin = username === ADMIN_USERNAME;
+    const isOwner = username === OWNER_USERNAME;
+    const isAdmin = adminUsers.has(username);
+    
+    const displayName = isOwner ? "👑 Owner - Niam" : 
+                       isAdmin ? "⭐ Admin" : username;
     
     const userData = {
       id: socket.id,
       username: username,
       displayName: displayName,
+      isOwner: isOwner,
       isAdmin: isAdmin,
       currentRoom: null,
-      joinedAt: Date.now(),
-      lastActive: Date.now()
+      joinedAt: Date.now()
     };
     
     users.set(socket.id, userData);
     socket.emit('username_set', userData);
-    console.log(`User set: ${username} -> ${displayName} (Admin: ${isAdmin})`);
+    console.log(`User ${username} → ${displayName} (Owner: ${isOwner}, Admin: ${isAdmin})`);
   });
 
   // ========== ROOM MANAGEMENT ==========
@@ -102,138 +91,64 @@ io.on('connection', (socket) => {
     // Join new room
     socket.join(roomId);
     user.currentRoom = roomId;
-    user.lastActive = Date.now();
 
     // Create room if it doesn't exist
     if (!rooms.has(roomId)) {
-      const roomCode = isPrivate ? generateRoomCode() : null;
-      const room = {
+      rooms.set(roomId, {
         id: roomId,
-        name: roomName || (isPrivate ? `Private Room ${roomCode}` : 'Public Chat'),
+        name: roomName || 'Public Chat',
         isPrivate: isPrivate,
-        code: roomCode,
+        code: isPrivate ? generateRoomCode() : null,
         createdBy: user.username,
         createdAt: Date.now(),
         users: [],
-        messages: [],
-        maxUsers: isPrivate ? MAX_ROOM_USERS : Infinity
-      };
-
-      rooms.set(roomId, room);
-      if (isPrivate && roomCode) {
-        privateRooms.set(roomCode, room);
+        messages: []
+      });
+      
+      // Store private room by code
+      if (isPrivate) {
+        const room = rooms.get(roomId);
+        privateRooms.set(room.code, {
+          id: roomId,
+          name: roomName,
+          code: room.code,
+          createdBy: user.username
+        });
       }
     }
 
     const room = rooms.get(roomId);
     
-    // Check room capacity
-    if (room.users.length >= room.maxUsers) {
-      socket.emit('room_error', { message: 'Room is full (max 15 users)' });
-      socket.leave(roomId);
-      user.currentRoom = null;
-      return;
-    }
-
     // Add user to room
     room.users.push({
       id: socket.id,
       username: user.displayName,
-      isAdmin: user.isAdmin,
-      isCreator: user.username === room.createdBy
+      isOwner: user.isOwner,
+      isAdmin: user.isAdmin
     });
 
     // Notify room about new user
     socket.to(roomId).emit('user_joined', {
       username: user.displayName,
       userId: socket.id,
-      isAdmin: user.isAdmin,
-      isCreator: user.username === room.createdBy
+      isOwner: user.isOwner,
+      isAdmin: user.isAdmin
     });
 
-    // Send room data to joining user
+    // Send room data to the joining user
     socket.emit('room_joined', {
       room: {
         id: room.id,
         name: room.name,
         isPrivate: room.isPrivate,
         code: room.code,
-        userCount: room.users.length,
-        maxUsers: room.maxUsers,
-        createdBy: room.createdBy
+        userCount: room.users.length
       },
       users: room.users,
       messages: room.messages.slice(-45) // Last 45 messages
     });
 
     console.log(`${user.displayName} joined ${room.name} (${roomId})`);
-  });
-
-  // ========== PRIVATE ROOM SPECIFIC ==========
-  socket.on('create_private_room', ({ roomName }) => {
-    const user = users.get(socket.id);
-    if (!user) return;
-
-    const roomCode = generateRoomCode();
-    const roomId = `private_${roomCode}`;
-    
-    const room = {
-      id: roomId,
-      name: roomName || `Private Room ${roomCode}`,
-      code: roomCode,
-      createdBy: user.username,
-      createdAt: Date.now(),
-      isPrivate: true,
-      users: [],
-      messages: [],
-      maxUsers: MAX_ROOM_USERS
-    };
-
-    rooms.set(roomId, room);
-    privateRooms.set(roomCode, room);
-
-    socket.emit('private_room_created', {
-      roomId: roomId,
-      roomCode: roomCode,
-      roomName: room.name
-    });
-
-    console.log(`Private room created: ${room.name} (${roomCode}) by ${user.displayName}`);
-  });
-
-  socket.on('join_private_room', ({ roomCode }) => {
-    const user = users.get(socket.id);
-    if (!user) return;
-
-    const roomData = privateRooms.get(roomCode.toUpperCase());
-    if (!roomData) {
-      socket.emit('room_error', { message: 'Room not found. Check the code.' });
-      return;
-    }
-
-    // Join using existing join_room event
-    socket.emit('join_room', {
-      roomId: roomData.id,
-      roomName: roomData.name,
-      isPrivate: true
-    });
-  });
-
-  socket.on('get_my_rooms', () => {
-    const user = users.get(socket.id);
-    if (!user) return;
-
-    const myRooms = Array.from(privateRooms.values())
-      .filter(room => room.createdBy === user.username)
-      .map(room => ({
-        id: room.id,
-        name: room.name,
-        code: room.code,
-        createdAt: room.createdAt,
-        userCount: room.users.length
-      }));
-
-    socket.emit('my_rooms_list', myRooms);
   });
 
   // ========== MESSAGING ==========
@@ -244,33 +159,31 @@ io.on('connection', (socket) => {
     const room = rooms.get(user.currentRoom);
     if (!room) return;
 
-    const sanitizedContent = sanitizeMessage(content);
-    if (!sanitizedContent && !imageUrl) return;
-
+    // Check message length
+    const trimmedContent = content.substring(0, 400);
+    
     const message = {
       id: Date.now().toString(),
       userId: socket.id,
       username: user.displayName,
-      content: sanitizedContent,
+      content: trimmedContent,
       imageUrl: imageUrl || null,
       timestamp: new Date().toISOString(),
       likes: [],
       dislikes: [],
       replies: [],
       reactions: {},
+      isOwner: user.isOwner,
       isAdmin: user.isAdmin,
       isCreator: user.username === room.createdBy
     };
 
     room.messages.push(message);
     
-    // Update user's last active time
-    user.lastActive = Date.now();
-    
-    // Send to everyone in room
+    // Send to everyone in the room
     io.to(user.currentRoom).emit('new_message', message);
     
-    console.log(`Message from ${user.displayName} in ${room.name}: ${sanitizedContent.substring(0, 50)}...`);
+    console.log(`Message from ${user.displayName} in ${room.name}: ${trimmedContent.substring(0, 30)}...`);
   });
 
   // ========== MESSAGE REACTIONS ==========
@@ -282,47 +195,7 @@ io.on('connection', (socket) => {
     handleReaction(socket.id, messageId, 'dislike');
   });
 
-  socket.on('add_reaction', ({ messageId, emoji }) => {
-    const user = users.get(socket.id);
-    if (!user || !user.currentRoom) return;
-
-    const room = rooms.get(user.currentRoom);
-    if (!room) return;
-
-    const message = room.messages.find(m => m.id === messageId);
-    if (!message) return;
-
-    if (!message.reactions[emoji]) {
-      message.reactions[emoji] = [];
-    }
-
-    if (!message.reactions[emoji].includes(socket.id)) {
-      message.reactions[emoji].push(socket.id);
-      io.to(user.currentRoom).emit('message_updated', message);
-    }
-  });
-
-  // ========== TYPING INDICATORS ==========
-  socket.on('typing_start', () => {
-    const user = users.get(socket.id);
-    if (!user || !user.currentRoom) return;
-
-    socket.to(user.currentRoom).emit('user_typing', {
-      userId: socket.id,
-      username: user.displayName
-    });
-  });
-
-  socket.on('typing_stop', () => {
-    const user = users.get(socket.id);
-    if (!user || !user.currentRoom) return;
-
-    socket.to(user.currentRoom).emit('user_stopped_typing', { 
-      userId: socket.id 
-    });
-  });
-
-  // ========== HELPER FUNCTIONS ==========
+  // Handle reaction helper
   function handleReaction(userId, messageId, type) {
     const user = users.get(userId);
     if (!user || !user.currentRoom) return;
@@ -368,6 +241,176 @@ io.on('connection', (socket) => {
     io.to(user.currentRoom).emit('message_updated', message);
   }
 
+  // ========== PRIVATE ROOMS ==========
+  socket.on('create_private_room', ({ roomName }) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const roomCode = generateRoomCode();
+    const roomId = `private_${roomCode}`;
+    
+    const room = {
+      id: roomId,
+      name: roomName,
+      code: roomCode,
+      createdBy: user.username,
+      createdAt: Date.now(),
+      isPrivate: true,
+      users: [],
+      messages: []
+    };
+
+    privateRooms.set(roomCode, room);
+    rooms.set(roomId, room);
+
+    socket.emit('private_room_created', {
+      roomId: roomId,
+      roomCode: roomCode,
+      roomName: roomName
+    });
+
+    console.log(`Private room created: ${roomName} (${roomCode})`);
+  });
+
+  socket.on('join_private_room', ({ roomCode }) => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const roomData = privateRooms.get(roomCode.toUpperCase());
+    if (!roomData) {
+      socket.emit('room_error', { message: 'Room not found' });
+      return;
+    }
+
+    // Join the room using existing join_room event
+    socket.emit('join_room', {
+      roomId: roomData.id,
+      roomName: roomData.name,
+      isPrivate: true
+    });
+  });
+
+  socket.on('get_my_rooms', () => {
+    const user = users.get(socket.id);
+    if (!user) return;
+
+    const myRooms = Array.from(privateRooms.values())
+      .filter(room => room.createdBy === user.username)
+      .map(room => ({
+        id: room.id,
+        name: room.name,
+        code: room.code,
+        createdAt: room.createdAt
+      }));
+
+    socket.emit('my_rooms_list', myRooms);
+  });
+
+  // ========== ADMIN MANAGEMENT (OWNER ONLY) ==========
+  socket.on('grant_admin', ({ targetUsername }) => {
+    const user = users.get(socket.id);
+    if (!user || !user.isOwner) {
+      socket.emit('admin_error', { message: 'Only owner can grant admin' });
+      return;
+    }
+
+    if (targetUsername === OWNER_USERNAME) {
+      socket.emit('admin_error', { message: 'Cannot modify owner status' });
+      return;
+    }
+
+    adminUsers.add(targetUsername);
+    
+    // Update target user if online
+    const targetSocket = Array.from(users.entries())
+      .find(([id, data]) => data.username === targetUsername)?.[0];
+    
+    if (targetSocket) {
+      const targetData = users.get(targetSocket);
+      targetData.isAdmin = true;
+      targetData.displayName = "⭐ Admin";
+      users.set(targetSocket, targetData);
+      
+      io.to(targetSocket).emit('admin_granted', { 
+        grantedBy: user.username 
+      });
+      
+      // Notify room
+      if (targetData.currentRoom) {
+        io.to(targetData.currentRoom).emit('user_updated', {
+          userId: targetSocket,
+          username: targetData.displayName,
+          isOwner: targetData.isOwner,
+          isAdmin: targetData.isAdmin
+        });
+      }
+    }
+
+    socket.emit('admin_granted_response', { 
+      success: true, 
+      username: targetUsername,
+      message: `Admin granted to ${targetUsername}`
+    });
+    
+    console.log(`Owner granted admin to ${targetUsername}`);
+  });
+
+  socket.on('revoke_admin', ({ targetUsername }) => {
+    const user = users.get(socket.id);
+    if (!user || !user.isOwner) {
+      socket.emit('admin_error', { message: 'Only owner can revoke admin' });
+      return;
+    }
+
+    if (targetUsername === OWNER_USERNAME) {
+      socket.emit('admin_error', { message: 'Cannot modify owner status' });
+      return;
+    }
+
+    adminUsers.delete(targetUsername);
+    
+    // Update target user if online
+    const targetSocket = Array.from(users.entries())
+      .find(([id, data]) => data.username === targetUsername)?.[0];
+    
+    if (targetSocket) {
+      const targetData = users.get(targetSocket);
+      targetData.isAdmin = false;
+      targetData.displayName = targetData.username;
+      users.set(targetSocket, targetData);
+      
+      io.to(targetSocket).emit('admin_revoked');
+      
+      // Notify room
+      if (targetData.currentRoom) {
+        io.to(targetData.currentRoom).emit('user_updated', {
+          userId: targetSocket,
+          username: targetData.displayName,
+          isOwner: targetData.isOwner,
+          isAdmin: targetData.isAdmin
+        });
+      }
+    }
+
+    socket.emit('admin_revoked_response', { 
+      success: true, 
+      username: targetUsername,
+      message: `Admin revoked from ${targetUsername}`
+    });
+    
+    console.log(`Owner revoked admin from ${targetUsername}`);
+  });
+
+  socket.on('get_admin_list', () => {
+    const user = users.get(socket.id);
+    if (!user || !user.isOwner) return;
+    
+    socket.emit('admin_list', {
+      admins: Array.from(adminUsers).filter(name => name !== OWNER_USERNAME),
+      owner: OWNER_USERNAME
+    });
+  });
+
   // ========== DISCONNECTION ==========
   socket.on('disconnect', () => {
     const user = users.get(socket.id);
@@ -380,17 +423,6 @@ io.on('connection', (socket) => {
             username: user.displayName,
             userId: socket.id
           });
-
-          // Clean up empty private rooms after 5 minutes
-          if (room.isPrivate && room.users.length === 0) {
-            setTimeout(() => {
-              if (rooms.get(room.id)?.users.length === 0) {
-                rooms.delete(room.id);
-                if (room.code) privateRooms.delete(room.code);
-                console.log(`Cleaned up empty room: ${room.name}`);
-              }
-            }, 5 * 60 * 1000); // 5 minutes
-          }
         }
       }
       users.delete(socket.id);
@@ -399,9 +431,21 @@ io.on('connection', (socket) => {
   });
 });
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    users: users.size,
+    rooms: rooms.size,
+    privateRooms: privateRooms.size,
+    adminCount: adminUsers.size - 1 // Exclude owner
+  });
+});
+
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-  console.log(`✅ NiamChat Server v2.0.0 running on port ${PORT}`);
+  console.log(`✅ Server running on port ${PORT}`);
   console.log(`📡 WebSocket server ready for connections`);
-  console.log(`👑 Admin username: ${ADMIN_USERNAME}`);
+  console.log(`👑 Owner: ${OWNER_USERNAME}`);
+  console.log(`⭐ Admins: ${Array.from(adminUsers).filter(name => name !== OWNER_USERNAME).join(', ') || 'None'}`);
 });
